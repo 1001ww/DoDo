@@ -48,8 +48,7 @@ npm run build      # 产出 NSIS 安装包：src-tauri/target/release/bundle/nsi
 ```
 ├─ ui/                  正式前端（index.html + app.js + styles.css，无构建直接加载）
 ├─ src-tauri/           Tauri 2 后端（托盘 / 全局快捷键 / SQLite 迁移 / 通知 / 备份 / 事务批量写入）
-├─ prototype/           设计原型（单文件，视觉参考基线）
-└─ scripts/             selftest 沙箱跑测、原型拆分脚本
+└─ scripts/             selftest 沙箱跑测
 ```
 
 ## 路线图
