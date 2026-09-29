@@ -51,14 +51,6 @@ npm run build      # 产出 NSIS 安装包：src-tauri/target/release/bundle/nsi
 └─ scripts/             selftest 沙箱跑测
 ```
 
-## 路线图
-
-- **V1.1**：全局悬浮速记球（桌面常驻速记入口）、全局搜索、独立标签模型等
-- **V1.5**：统计面板（本周完成趋势）、备份管理完善、多级子任务
-- **V2.0**：番茄钟、习惯打卡、WebDAV 多设备同步
-
-完整需求 / 设计 / 变更记录见项目内部文档（思源笔记）。
-
 ## License
 
 [MIT](LICENSE)
