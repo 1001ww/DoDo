@@ -1,0 +1,27 @@
+[package]
+name = "dodo"
+version = "0.1.0"
+edition = "2021"
+description = "DoDo · Windows 桌面待办应用"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-dialog = "2"
+notify-rust = "4"
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
