@@ -29,14 +29,6 @@ npm install
 npm run dev        # tauri dev：改 ui/ 热更新，改 Rust 自动重编译重启
 ```
 
-### 自测
-
-```bash
-node scripts/selftest-harness.js   # 20 组解析 / 重复任务用例，免浏览器，退出码 0 = 全过
-```
-
-也可在浏览器打开 `ui/index.html?selftest=1` 查看结果。
-
 ### 打包
 
 ```bash
@@ -48,7 +40,6 @@ npm run build      # 产出 NSIS 安装包：src-tauri/target/release/bundle/nsi
 ```
 ├─ ui/                  正式前端（index.html + app.js + styles.css，无构建直接加载）
 ├─ src-tauri/           Tauri 2 后端（托盘 / 全局快捷键 / SQLite 迁移 / 通知 / 备份 / 事务批量写入）
-└─ scripts/             selftest 沙箱跑测
 ```
 
 ## License
