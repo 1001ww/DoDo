@@ -79,11 +79,20 @@ async function screenLogical(){
   }
   return screenCache={w:1280,h:720}; // 兜底:宁可贴内也不出屏
 }
-async function applyWin(x,y,w,h){
-  /* 先移位再改尺寸:窗口贴边时先扩宽会被系统钳制,导致 setPosition 不生效 */
-  await WIN.setPosition(new DPI.LogicalPosition(Math.round(x),Math.round(y)));
-  await WIN.setSize(new DPI.LogicalSize(Math.round(w),Math.round(h)));
+let winOp=Promise.resolve(); // 窗口操作串行队列:防展开/收起/拖拽的 IPC 交错竞态
+function winSet(x,y,w,h){
+  winOp=winOp.then(async()=>{
+    /* 先移位再改尺寸:窗口贴边时先扩宽会被系统钳制,导致 setPosition 不生效 */
+    await WIN.setPosition(new DPI.LogicalPosition(Math.round(x),Math.round(y)));
+    await WIN.setSize(new DPI.LogicalSize(Math.round(w),Math.round(h)));
+  }).catch(e=>{console.warn('[DoDo] 窗口操作失败:',e)});
+  return winOp;
 }
+function winSize(w,h){
+  winOp=winOp.then(()=>WIN.setSize(new DPI.LogicalSize(Math.round(w),Math.round(h)))).catch(e=>{console.warn('[DoDo] 窗口操作失败:',e)});
+  return winOp;
+}
+async function applyWin(x,y,w,h){return winSet(x,y,w,h)}
 async function dock(){
   const sc=await screenLogical();
   ballX=side==='left'?-12:sc.w-50;
@@ -105,13 +114,15 @@ EV&&EV.listen('ball-state',e=>{const s=e.payload;if(!s)return;
 let shown=false,dockDone=false;
 function tryShow(){
   if(shown||!S||S.visible===false||!dockDone)return;
-  shown=true;try{WIN.show()}catch(e){}
+  shown=true;
+  try{WIN.show()}catch(e){}
+  dock(); // 重新落位并强制一次位置/尺寸写入,规避透明窗隐藏后不重绘
 }
 function applyState(s){
   S=s;
   document.documentElement.dataset.theme=s.theme||'light';
-  if(s.visible===false){try{WIN.hide()}catch(e){}}
-  tryShow();
+  if(s.visible===false){shown=false;try{WIN.hide()}catch(e){}} // 重置闩锁:下次开启可再次显示
+  else tryShow();
   renderBall();
   if(mode!=='ball')renderList(!justOpened);
   justOpened=false;
@@ -183,13 +194,12 @@ async function fitWindow(){
   if(mode==='ball')return;
   const sc=await screenLogical();
   const h=Math.max(260,Math.min(panel.scrollHeight+2,sc.h-16));
-  await WIN.setSize(new DPI.LogicalSize(PANEL_W,h));
+  winSize(PANEL_W,h);
 }
 
 /* ================= 展开 / 收起 ================= */
 async function openPanel(){
   try{
-    
     if(mode!=='ball'||!S){return}
     mode='panel';clearTimeout(peekTimer);justOpened=true;
     renderList(true);
@@ -199,25 +209,29 @@ async function openPanel(){
     let px,py;
     if(panelPos){px=panelPos.x;py=panelPos.y}
     else{
-      px=cx>sc.w/2?cx-31-16-PANEL_W:cx+31+16;
+      /* 面板覆盖球的原位:双击的第二击必然落在面板内,不会触发失焦收起 */
+      px=cx>sc.w/2?cx+31-PANEL_W:cx-31;
       px=Math.max(PAD,Math.min(sc.w-PANEL_W-PAD,px));
       py=Math.min(Math.max(PAD,cy-64),sc.h-h-PAD);
     }
     document.body.classList.add('expanded');
     ball.style.display='none';
     await applyWin(px,py,PANEL_W,h);
-    
+    if(mode!=='panel'){ /* 展开期间被失焦/Esc 收起:撤销展开,回到球态 */
+      panel.classList.remove('open');document.body.classList.remove('expanded');ball.style.display='';
+      await dock();return;
+    }
     panel.style.transformOrigin=`${Math.max(20,Math.min(356,cx-px))}px ${Math.max(20,Math.min(h-20,cy-py))}px`;
     panel.classList.add('open');
     setTimeout(()=>{$('#pInput').focus()},120);
     try{await WIN.setFocus()}catch(e){}
-    
   }catch(err){reportErr('openPanel: '+(err&&err.message||err))}
 }
 async function closeToBall(){
   mode='ball';panel.classList.remove('open');hideMenu();
   document.body.classList.remove('expanded');ball.style.display='';
   await dock();
+  try{await WIN.show()}catch(e){} // 兜底:任何路径收起后球必须可见
 }
 /* 面板头部拖拽:窗口跟随;双击头部复位到球旁 */
 const phead=$('#pHead');

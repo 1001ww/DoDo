@@ -1145,7 +1145,7 @@ function buildSettings(){
       <div class="srow" data-ssel="startview"><div><div class="sl">启动时打开</div><div class="sd">应用启动后默认显示的视图</div></div><span class="sv">${sv?sv.name:'今天'}${ic('chevR',13)}</span></div>
       <div class="srow" data-ssel="weekstart"><div><div class="sl">一周起始日</div><div class="sd">影响日历视图的排列</div></div><span class="sv">${settings.weekStart==='mon'?'周一':'周日'}${ic('chevR',13)}</span></div>
       <div class="srow" data-ssel="timeformat"><div><div class="sl">时间格式</div><div class="sd">任务时刻的显示方式</div></div><span class="sv">${settings.timeFormat==='24'?'24 小时制':'12 小时制'}${ic('chevR',13)}</span></div>
-      <div class="srow"><div><div class="sl">悬浮速记球</div><div class="sd">桌面常驻小圆球:待办数一眼可见,点开查看今天、勾选完成、快速记录</div></div><button class="switch ${settings.ballVisible!==false?'on':''}" data-stoggle="ball" title="切换"></button></div>
+      <div class="srow"><div><div class="sl">悬浮速记球</div><div class="sd">桌面常驻小圆球:待办数一眼可见,点开查看今天、勾选完成、快速记录</div></div><button class="switch ${settings.ballVisible!==false?'on':''}" data-stoggle="ballVisible" title="切换"></button></div>
       <div class="srow"><div><div class="sl">开机自启动</div><div class="sd">登录 Windows 后自动在后台启动 DoDo(托盘常驻)</div></div><button class="switch ${autostartOn?'on':''}" data-autostart title="切换"></button></div>`;
   }else if(settingsTab==='notify'){
     c.innerHTML=`<h3>提醒</h3><div class="sdesc">桌面通知与默认提醒</div>
@@ -1216,7 +1216,7 @@ function settingsClick(e){
     return;
   }
   const tg=e.target.closest('[data-stoggle]');if(tg){const k=tg.dataset.stoggle;settings[k]=!settings[k];saveSettings();buildSettings();
-    if(k==='ball'){inv2('set_ball_visible',settings.ballVisible!==false);ballPush()}
+    if(k==='ballVisible'){inv2('set_ball_visible',settings.ballVisible);ballPush()}
     toast(settings[k]?'已开启':'已关闭');return}
   const sel=e.target.closest('[data-ssel]');if(sel){settingsMenu(sel);return}
   const mc=e.target.closest('[data-mcolor]');if(mc){editState.color=mc.dataset.mcolor;buildSettings();return}

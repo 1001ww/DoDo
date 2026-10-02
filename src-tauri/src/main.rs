@@ -488,6 +488,7 @@ fn main() {
             autostart_enable,
             autostart_disable,
             backup_database,
+            set_ball_visible,
             sqlite_init,
             sqlite_select,
             sqlite_exec,
