@@ -94,12 +94,60 @@ fn send_notification(title: String, body: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 默认数据目录:可执行文件同级 data\(数据跟随安装目录,便携式语义)。
+/// 旧版数据在 %APPDATA%\com.dodo.todo,首次启动由前端搬迁。
 #[tauri::command]
 fn default_data_dir(app: tauri::AppHandle) -> Result<String, String> {
-    app.path()
-        .app_config_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| e.to_string())
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "no parent dir".to_string())?
+        .join("data");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// 旧版数据目录(%APPDATA%\com.dodo.todo),供首次搬迁判断
+#[tauri::command]
+fn legacy_data_dir() -> Result<String, String> {
+    let dir = dirs_data_home().ok_or_else(|| "no data home".to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+fn dirs_data_home() -> Option<std::path::PathBuf> {
+    std::env::var("APPDATA").ok().map(|d| std::path::PathBuf::from(d).join("com.dodo.todo"))
+}
+
+/// 文件探测(旧数据搬迁判断用)
+#[tauri::command]
+fn fs_exists(path: String) -> Result<bool, String> {
+    Ok(std::path::Path::new(&path).exists())
+}
+
+/// 单文件复制(同名覆盖)
+#[tauri::command]
+fn fs_copy(from: String, to: String) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&to).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// 目录递归复制(搬迁 backups 用)
+#[tauri::command]
+fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
+    fn rec(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for e in std::fs::read_dir(src)? {
+            let e = e?;
+            let ty = e.file_type()?;
+            let s = e.path();
+            let d = dst.join(e.file_name());
+            if ty.is_dir() { rec(&s, &d)?; } else { std::fs::copy(&s, &d)?; }
+        }
+        Ok(())
+    }
+    rec(std::path::Path::new(&from), std::path::Path::new(&to)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -482,6 +530,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             send_notification,
             default_data_dir,
+            legacy_data_dir,
+            fs_exists,
+            fs_copy,
+            fs_copy_dir,
             make_dir,
             open_folder,
             autostart_status,

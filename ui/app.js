@@ -1114,7 +1114,7 @@ function openSettings(tab){
     ov=document.createElement('div');ov.id='settingsOverlay';ov.className='overlay';
     ov.innerHTML=`<div class="sdialog">
       <button class="icon-btn sclose" data-sclose title="关闭">${ic('x',15)}</button>
-      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.1</div></aside>
+      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.2</div></aside>
       <div class="scontent" id="sContent"></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click',settingsClick);
@@ -1191,7 +1191,7 @@ function buildSettings(){
   }else{
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
-        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.1</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.2</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;
@@ -1570,9 +1570,35 @@ if(window.__TAURI__?.event?.listen){
 }
 
 /* ================= 启动 ================= */
+/* 旧版数据搬迁:数据目录已改为可执行文件同级 data\(v0.2.2 起)。
+   仅当新目录无库且旧 %APPDATA% 目录有库时执行一次:复制 dodo.db / backups / dodo.ico,
+   并清掉 localStorage 里可能残留的旧自定义 dataDir */
+let inv0=null;
+async function migrateLegacyData(inv){
+  try{
+    const legacy=await inv('legacy_data_dir');
+    if(!legacy)return;
+    const J=(a,b)=>a.replace(/[\/]+$/,'')+'/'+b.replace(/^[\/]+/,''); // 统一正斜杠拼接,避开反斜杠转义
+    const exists=async p=>{try{return await inv('fs_exists',{path:p})===true}catch(e){return false}};
+    const copy=async(a,b)=>{try{await inv('fs_copy',{from:a,to:b})}catch(e){}};
+    const copyDir=async(a,b)=>{try{await inv('make_dir',{path:b});await inv('fs_copy_dir',{from:a,to:b})}catch(e){}};
+    const legacyDb=J(legacy,'dodo.db');
+    if(!await exists(legacyDb))return;
+    const newDb=J(defaultDataDir,'dodo.db');
+    if(await exists(newDb))return; // 新目录已有数据,不覆盖
+    await copy(legacyDb,newDb);
+    if(await exists(J(legacy,'backups')))await copyDir(J(legacy,'backups'),J(defaultDataDir,'backups'));
+    if(await exists(J(legacy,'dodo.ico')))await copy(J(legacy,'dodo.ico'),J(defaultDataDir,'dodo.ico'));
+    if(settings.dataDir){settings.dataDir='';saveSettings()} // 清指向旧 APPDATA 时代的残留
+  }catch(e){console.warn('[DoDo] 旧数据搬迁失败(数据仍在旧目录):',e)}
+}
 async function boot(){
   const inv=window.__TAURI__?.core?.invoke;
-  if(inv){try{defaultDataDir=await inv('default_data_dir')}catch(e){}}
+  if(inv){
+    inv0=inv;
+    try{defaultDataDir=await inv('default_data_dir')}catch(e){}
+    await migrateLegacyData(inv);
+  }
   await DB.init();
   await loadAll();
   tasks.forEach(t=>{t.repeat=normRepeat(t.repeat)});
