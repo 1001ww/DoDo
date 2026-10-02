@@ -58,6 +58,7 @@ const I={
   palette:'<path d="M12 3a9 9 0 1 0 .46 18H14a2 2 0 0 0 1.56-3.25 1.5 1.5 0 0 1 1.18-2.44h2.06A3.7 3.7 0 0 0 22.5 11.6C22.06 6.79 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.2" cy="7.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.8" cy="7" r="1.2" fill="currentColor" stroke="none"/>',
   db:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>',
+  grip:'<circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
 };
 const ic=(n,s=16,w=1.8)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
 const CHECK_SVG='<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.6 9 10 3"/></svg>';
@@ -71,7 +72,8 @@ let LISTS=[
 const listById=id=>LISTS.find(l=>l.id===id);
 const PALETTE=['#5B5BD6','#30A46C','#F5A524','#E5484D','#4A9EF5','#B16DFF','#00A2C7'];
 let seq=100;
-let tasks=[
+/* 演示任务仅用于浏览器预览(!__TAURI__)与「恢复示例数据」;桌面端首次启动保持空列表,不再自动写入示例 */
+const DEMO_TASKS=[
   {id:1, title:'写周报并发给项目负责人', list:'work', tags:['深度工作'], prio:3, due:TODAY, time:'14:00', remind:'13:50', repeat:'weekly', note:'模板在共享盘 /周报/2026,记得附上数据截图。', subs:[{t:'汇总本周进展',d:true},{t:'整理下周计划',d:false},{t:'同步风险项',d:false}]},
   {id:2, title:'客户方案评审会', list:'work', tags:['重要客户'], prio:2, due:TODAY, time:'10:30', remind:'10:15', note:'腾讯会议 889-2231,提前准备演示环境。'},
   {id:3, title:'回复合作方邮件', list:'work', prio:2, due:addDays(-1)},
@@ -94,6 +96,7 @@ let tasks=[
   {id:20,title:'提交差旅报销单', list:'work', due:addDays(-1), done:true, doneAt:addDays(-1)},
   {id:21,title:'健身房年卡续费', list:'life', done:true, doneAt:addDays(-3)},
 ];
+let tasks=window.__TAURI__?[]:JSON.parse(JSON.stringify(DEMO_TASKS));
 const byId=id=>tasks.find(t=>t.id===id);
 const PRIO={3:{n:'高',c:'#E5484D',cls:'flag-hi'},2:{n:'中',c:'#F5A524',cls:'flag-md'},1:{n:'低',c:'#4A9EF5',cls:'flag-lo'},0:{n:'无',c:'#A4A4B0',cls:''}};
 function fmtRepeat(r){
@@ -120,8 +123,8 @@ function normRepeat(r){
 }
 
 /* ================= 状态 ================= */
-let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'today',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:''},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
-const SAMPLE=JSON.parse(JSON.stringify(tasks));
+let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'today',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
+const SAMPLE=JSON.parse(JSON.stringify(DEMO_TASKS));
 const state={view:'today',search:'',calMonth:null,calSel:TODAY,detailId:null,undo:null,addingList:false,addingTag:false};
 if(!state.calMonth){const n=new Date();state.calMonth=new Date(n.getFullYear(),n.getMonth(),1)}
 
@@ -370,7 +373,7 @@ function buildDetail(){
   $('#detailInner').innerHTML=`
     <div class="d-head">
       <button class="checkbox ${t.done?'checked':''}" data-toggle="${t.id}">${CHECK_SVG}</button>
-      <input class="d-title" data-field="title" value="${esc(t.title)}" placeholder="任务标题">
+      <textarea class="d-title" data-field="title" rows="1" placeholder="任务标题">${esc(t.title)}</textarea>
       <button class="icon-btn" data-close-detail title="关闭">${ic('x',15)}</button>
     </div>
     <textarea class="d-note" data-field="note" placeholder="添加备注…">${esc(t.note||'')}</textarea>
@@ -398,6 +401,13 @@ function buildDetail(){
         <span class="p-val">${(t.tags||[]).length?(t.tags||[]).map(tg=>`<span class="tchip">${esc(tg)}</span>`).join(''):`<span class="ph">添加标签</span>`}${ic('chevR',13)}</span></div>
     </div>
     <div class="d-foot"><button class="d-del" data-del="${t.id}">${ic('trash',15)}删除任务</button></div>`;
+  fitTitle($('#detailInner .d-title'));
+}
+/* 标题按内容自适应高度(换行显示);回车确认,不插换行 */
+function fitTitle(el){
+  if(!el)return;
+  el.style.height='auto';
+  el.style.height=el.scrollHeight+'px';
 }
 
 /* ================= 菜单 ================= */
@@ -486,9 +496,9 @@ function propMenu(kind,anchor){
     openMenu(anchor,menuHTML(items),m=>m.addEventListener('click',e=>{const mi=e.target.closest('[data-mi]');if(!mi)return;
       t.prio=+mi.dataset.mi||0;render()}));
   }else if(kind==='tags'){
-    const all=tagList();
-    const items=all.length?all.map(tg=>({v:tg,label:tg,icon:'tag',active:(t.tags||[]).includes(tg)})):[{v:'__none',label:'暂无标签,直接回车创建',icon:'tag'}];
-    openMenu(anchor,menuHTML(items),m=>m.addEventListener('click',e=>{const mi=e.target.closest('[data-mi]');if(!mi||mi.dataset.mi==='__none')return;
+    const all=tagList();    const items=all.length?all.map(tg=>({v:tg,label:tg,icon:'tag',active:(t.tags||[]).includes(tg)})):[{v:'__none',label:'暂无标签 · 去「设置 → 清单与标签」创建',icon:'tag'}];
+    openMenu(anchor,menuHTML(items),m=>m.addEventListener('click',e=>{const mi=e.target.closest('[data-mi]');if(!mi)return;
+      if(mi.dataset.mi==='__none'){openSettings('lists');return}
       const tg=mi.dataset.mi;t.tags=t.tags||[];const i=t.tags.indexOf(tg);
       if(i>=0)t.tags.splice(i,1);else t.tags.push(tg);render()}));
   }
@@ -948,6 +958,7 @@ function applyTheme(){
   document.documentElement.dataset.theme=resolved;
   saveSettings();
   $('#themeBtn').innerHTML=ic(resolved==='light'?'moon':'sun',16);
+  ballPush();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(settings.themeMode==='auto')applyTheme()});
 $('#themeBtn').onclick=()=>{
@@ -996,12 +1007,83 @@ document.addEventListener('dragleave',e=>{const col=e.target.closest('.kcol');if
 document.addEventListener('drop',e=>{const col=e.target.closest('.kcol');if(!col)return;e.preventDefault();
   const id=+e.dataTransfer.getData('text/plain');const t=byId(id);
   if(t){t.prio=+col.dataset.drop||0;render();toast('已调整优先级')}});
+/* 设置页清单/标签拖拽排序 */
+let sortDrag=null,sortOver=null;
+document.addEventListener('dragstart',e=>{
+  const row=e.target.closest&&e.target.closest('[data-sortrow]');
+  if(!row)return;
+  sortDrag={kind:row.dataset.sortrow,id:row.dataset.sortid};
+  e.dataTransfer.effectAllowed='move';
+  try{e.dataTransfer.setData('text/plain',row.dataset.sortid)}catch(err){}
+});
+document.addEventListener('dragend',()=>{
+  if(sortOver){sortOver.el.classList.remove('sort-before','sort-after')}
+  sortOver=null;sortDrag=null;
+});
+document.addEventListener('dragover',e=>{
+  if(!sortDrag)return;
+  const row=e.target.closest&&e.target.closest('[data-sortrow]');
+  if(!row||row.dataset.sortrow!==sortDrag.kind||row.dataset.sortid===sortDrag.id)return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  const r=row.getBoundingClientRect();
+  const before=e.clientY<r.top+r.height/2;
+  if(sortOver&&sortOver.el!==row)sortOver.el.classList.remove('sort-before','sort-after');
+  row.classList.toggle('sort-before',before);
+  row.classList.toggle('sort-after',!before);
+  sortOver={el:row,before};
+});
+document.addEventListener('drop',e=>{
+  if(!sortDrag)return;
+  e.preventDefault();
+  const row=e.target.closest&&e.target.closest('[data-sortrow]');
+  if(row&&row.dataset.sortrow===sortDrag.kind&&row.dataset.sortid!==sortDrag.id){
+    const r=row.getBoundingClientRect();
+    reorderSort(sortDrag.kind,sortDrag.id,row.dataset.sortid,e.clientY<r.top+r.height/2);
+  }
+  if(sortOver){sortOver.el.classList.remove('sort-before','sort-after')}
+  sortOver=null;sortDrag=null;
+});
+function moveVal(arr,val,refId,before){
+  const from=arr.indexOf(val);
+  if(from<0||refId===val)return false;
+  const [m]=arr.splice(from,1);
+  let to=arr.indexOf(refId);
+  if(to<0){arr.splice(from,0,m);return false}
+  if(!before)to++;
+  arr.splice(to,0,m);
+  return true;
+}
+function reorderSort(kind,id,refId,before){
+  let ok=false;
+  if(kind==='list'){
+    const from=LISTS.findIndex(l=>l.id===id),ref=LISTS.findIndex(l=>l.id===refId);
+    if(from>=0&&ref>=0){
+      const [m]=LISTS.splice(from,1);
+      let to=LISTS.findIndex(l=>l.id===refId);
+      if(!before)to++;
+      LISTS.splice(to,0,m);ok=true;
+    }
+  }else{
+    /* 标签:设置顺序为权威,写回 extraTags(任务上存在而未登记的标签一并收编) */
+    const all=tagList();
+    const from=all.indexOf(id),ref=all.indexOf(refId);
+    if(from>=0&&ref>=0){
+      const [m]=all.splice(from,1);
+      let to=all.indexOf(refId);
+      if(!before)to++;
+      all.splice(to,0,m);
+      EXTRA_TAGS.length=0;EXTRA_TAGS.push(...all);ok=true;
+    }
+  }
+  if(ok){scheduleSync();buildSettings();render();toast('排序已保存')}
+}
 /* 输入 */
 document.addEventListener('input',e=>{
   if(e.target.id==='searchInput'){state.search=e.target.value;buildMain();return}
   if(e.target.id==='qaInput'){renderQaChips();return}
   const t=state.detailId!=null?byId(state.detailId):null;if(!t)return;
-  if(e.target.dataset.field==='title')t.title=e.target.value;
+  if(e.target.dataset.field==='title'){t.title=e.target.value;fitTitle(e.target)}
   if(e.target.dataset.field==='note')t.note=e.target.value;
 });
 document.addEventListener('change',e=>{if(e.target.dataset.field){buildMain();buildSidebar();scheduleSync()}});
@@ -1010,6 +1092,7 @@ document.addEventListener('keydown',e=>{
   const typing=/INPUT|TEXTAREA/.test(e.target.tagName);
   if(typing){
     if(e.target.id==='qaInput'&&e.key==='Enter'){e.preventDefault();quickAdd()}
+    if(e.target.dataset.field==='title'&&e.key==='Enter'){e.preventDefault();e.target.blur()}
     if(e.target.dataset.subadd&&e.key==='Enter'&&e.target.value.trim()){
       const t=byId(state.detailId);(t.subs=t.subs||[]).push({t:e.target.value.trim(),d:false});render()}
     if(e.target.id==='newListInput')return;
@@ -1031,7 +1114,7 @@ function openSettings(tab){
     ov=document.createElement('div');ov.id='settingsOverlay';ov.className='overlay';
     ov.innerHTML=`<div class="sdialog">
       <button class="icon-btn sclose" data-sclose title="关闭">${ic('x',15)}</button>
-      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.1.0</div></aside>
+      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.0</div></aside>
       <div class="scontent" id="sContent"></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click',settingsClick);
@@ -1062,6 +1145,7 @@ function buildSettings(){
       <div class="srow" data-ssel="startview"><div><div class="sl">启动时打开</div><div class="sd">应用启动后默认显示的视图</div></div><span class="sv">${sv?sv.name:'今天'}${ic('chevR',13)}</span></div>
       <div class="srow" data-ssel="weekstart"><div><div class="sl">一周起始日</div><div class="sd">影响日历视图的排列</div></div><span class="sv">${settings.weekStart==='mon'?'周一':'周日'}${ic('chevR',13)}</span></div>
       <div class="srow" data-ssel="timeformat"><div><div class="sl">时间格式</div><div class="sd">任务时刻的显示方式</div></div><span class="sv">${settings.timeFormat==='24'?'24 小时制':'12 小时制'}${ic('chevR',13)}</span></div>
+      <div class="srow"><div><div class="sl">悬浮速记球</div><div class="sd">桌面常驻小圆球:待办数一眼可见,点开查看今天、勾选完成、快速记录</div></div><button class="switch ${settings.ballVisible!==false?'on':''}" data-stoggle="ball" title="切换"></button></div>
       <div class="srow"><div><div class="sl">开机自启动</div><div class="sd">登录 Windows 后自动在后台启动 DoDo(托盘常驻)</div></div><button class="switch ${autostartOn?'on':''}" data-autostart title="切换"></button></div>`;
   }else if(settingsTab==='notify'){
     c.innerHTML=`<h3>提醒</h3><div class="sdesc">桌面通知与默认提醒</div>
@@ -1074,7 +1158,9 @@ function buildSettings(){
       <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">存储位置</div><div class="sd" style="word-break:break-all">${esc(curDir||'获取中…')}${settings.dataDir?'(自定义)':'(默认)'}</div></div></div>
       <div class="srow" style="cursor:default"><div><div class="sl">位置维护</div><div class="sd">可放到网盘目录实现多机备份;不影响导出与示例数据重置</div></div>
         <div style="display:flex;gap:8px;flex:none"><button class="sbtn" data-sact="openfolder">打开文件夹</button><button class="sbtn" data-sact="changedir">更改位置</button>${settings.dataDir?`<button class="sbtn" data-sact="resetdir">恢复默认</button>`:''}</div></div>
-      <div class="srow" style="cursor:default"><div><div class="sl">自动备份</div><div class="sd">每日首次启动自动备份数据库到 backups 子文件夹,保留最近 7 份${lastBackupDate?`;上次备份 ${lastBackupDate}`:''};恢复=关闭应用后把备份文件改名 dodo.db 覆盖回数据目录</div></div><button class="sbtn" data-sact="openbackups">打开备份夹</button></div>
+      <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">自动备份</div><div class="sd">每日首次启动自动备份数据库,保留最近 7 份${lastBackupDate?`;上次备份 ${lastBackupDate}`:''};恢复=关闭应用后把备份文件改名 dodo.db 覆盖回数据目录</div></div>
+        <div style="display:flex;gap:8px;flex:none"><button class="sbtn" data-sact="openbackups">打开备份夹</button><button class="sbtn" data-sact="changebackupdir">更改位置</button>${settings.backupDir?`<button class="sbtn" data-sact="resetbackupdir">恢复默认</button>`:''}</div></div>
+      <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">备份位置</div><div class="sd" style="word-break:break-all">${esc(backupLoc()||'获取中…')}${settings.backupDir?'(自定义)':'(数据目录 backups 子文件夹)'}</div></div></div>
       <div class="srow" style="cursor:default"><div><div class="sl">导出任务</div><div class="sd">将当前清单与任务导出为 JSON 文件</div></div><button class="sbtn" data-sact="export">导出</button></div>
       <div class="srow" style="cursor:default"><div><div class="sl">恢复示例数据</div><div class="sd">清空当前改动,还原到初始演示数据</div></div><button class="sbtn danger" data-sact="reset">重置</button></div>`;
   }else if(settingsTab==='lists'){
@@ -1086,26 +1172,26 @@ function buildSettings(){
       <button class="sbtn" data-msave>保存</button><button class="sbtn" data-mcancel>取消</button></div>`;
     const listRows=LISTS.map(l=>{
       if(editState.mode==='list'&&editState.id===l.id)return editRow('list',l.name,true);
-      return`<div class="mrow"><span class="dot" style="background:${l.color}"></span>
+      return`<div class="mrow" draggable="true" data-sortrow="list" data-sortid="${esc(l.id)}"><span class="grip" title="拖动排序">${ic('grip',12)}</span><span class="dot" style="background:${l.color}"></span>
         <span class="mname">${esc(l.name)}</span><span class="mcount">${lcnt(l)} 项</span>
         <button class="row-btn" data-mact="edit" data-mkind="list" data-mid="${l.id}" title="编辑">${ic('edit',14)}</button>
         <button class="row-btn" data-mact="del" data-mkind="list" data-mid="${l.id}" title="删除">${ic('trash',14)}</button></div>`;
     }).join('');
     const tagRows=tagList().map(tg=>{
       if(editState.mode==='tag'&&editState.id===tg)return editRow('tag',tg,false);
-      return`<div class="mrow">${ic('tag',15)}<span class="mname">${esc(tg)}</span><span class="mcount">${tcnt(tg)} 项</span>
+      return`<div class="mrow" draggable="true" data-sortrow="tag" data-sortid="${esc(tg)}"><span class="grip" title="拖动排序">${ic('grip',12)}</span>${ic('tag',15)}<span class="mname">${esc(tg)}</span><span class="mcount">${tcnt(tg)} 项</span>
         <button class="row-btn" data-mact="edit" data-mkind="tag" data-mid="${esc(tg)}" title="编辑">${ic('edit',14)}</button>
         <button class="row-btn" data-mact="del" data-mkind="tag" data-mid="${esc(tg)}" title="删除">${ic('trash',14)}</button></div>`;
     }).join('');
     const addRow=(kind,label)=>editState.mode===kind+'-new'?'':`<div class="madd" data-mact="add" data-mkind="${kind}">${ic('plus',13)}${label}</div>`;
-    c.innerHTML=`<h3>清单</h3><div class="sdesc">删除清单时,其中任务将自动移入收件箱</div>
+    c.innerHTML=`<h3>清单</h3><div class="sdesc">删除清单时,其中任务将自动移入收件箱;拖动 ⠿ 调整顺序,侧边栏同步</div>
       <div class="mlist">${listRows}${editState.mode==='list-new'?editRow('list','',true):''}</div>${addRow('list','新增清单')}
-      <h3 style="margin-top:20px">标签</h3><div class="sdesc">重命名会同步到所有任务;删除会从所有任务上移除</div>
+      <h3 style="margin-top:20px">标签</h3><div class="sdesc">重命名会同步到所有任务;删除会从所有任务上移除;拖动 ⠿ 调整顺序</div>
       <div class="mlist">${tagRows}${editState.mode==='tag-new'?editRow('tag','',false):''}</div>${addRow('tag','新增标签')}`;
   }else{
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
-        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.1.0</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.0</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;
@@ -1129,7 +1215,9 @@ function settingsClick(e){
     }catch(err){toast('设置失败:'+(err.message||err))}})();
     return;
   }
-  const tg=e.target.closest('[data-stoggle]');if(tg){const k=tg.dataset.stoggle;settings[k]=!settings[k];saveSettings();buildSettings();toast(settings[k]?'桌面通知已开启':'桌面通知已关闭');return}
+  const tg=e.target.closest('[data-stoggle]');if(tg){const k=tg.dataset.stoggle;settings[k]=!settings[k];saveSettings();buildSettings();
+    if(k==='ball'){inv2('set_ball_visible',settings.ballVisible!==false);ballPush()}
+    toast(settings[k]?'已开启':'已关闭');return}
   const sel=e.target.closest('[data-ssel]');if(sel){settingsMenu(sel);return}
   const mc=e.target.closest('[data-mcolor]');if(mc){editState.color=mc.dataset.mcolor;buildSettings();return}
   const mb=e.target.closest('[data-mact]');
@@ -1164,6 +1252,8 @@ function settingsClick(e){
     if(a==='export'){exportData();return}
     if(a==='openfolder'){openDataFolder();return}
     if(a==='openbackups'){openBackups();return}
+    if(a==='changebackupdir'){changeBackupDir();return}
+    if(a==='resetbackupdir'){resetBackupDir();return}
     if(a==='changedir'){changeDataDir();return}
     if(a==='resetdir'){resetDataDir();return}
     if(a==='reset'){
@@ -1270,11 +1360,35 @@ async function openDataFolder(){
   if(!dir){toast('存储位置获取中,稍后再试');return}
   try{await inv('open_folder',{path:dir})}catch(e){toast('打开失败:'+e.message)}
 }
+/* 生效的备份文件夹:自定义 backupDir 优先,否则数据目录 backups 子文件夹 */
+function backupLoc(){
+  if(settings.backupDir)return settings.backupDir.replace(/[\\/]+$/,'');
+  const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
+  return dir?dir+'/backups':'';
+}
 async function openBackups(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
-  const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
-  if(!dir){toast('数据目录获取中,稍后再试');return}
-  try{await inv('open_folder',{path:dir+'/backups'})}catch(e){toast('打开失败:'+e.message)}
+  const loc=backupLoc();
+  if(!loc){toast('数据目录获取中,稍后再试');return}
+  try{await inv('make_dir',{path:loc})}catch(e){}
+  try{await inv('open_folder',{path:loc})}catch(e){toast('打开失败:'+e.message)}
+}
+async function changeBackupDir(){
+  const inv=window.__TAURI__?.core?.invoke;
+  if(!inv){toast('桌面端才能更改备份位置');return}
+  let picked;
+  try{picked=await inv('plugin:dialog|open',{options:{directory:true,title:'选择自动备份文件夹',multiple:false}})}
+  catch(e){toast('选择失败:'+e.message);return}
+  if(!picked)return;
+  const dir=picked.replace(/[\\/]+$/,'');
+  if(normDir(dir)===normDir(backupLoc())){toast('位置未变化');return}
+  try{await inv('make_dir',{path:dir})}catch(e){}
+  settings.backupDir=dir;saveSettings();
+  buildSettings();toast('备份位置已更新');
+}
+function resetBackupDir(){
+  settings.backupDir='';saveSettings();
+  buildSettings();toast('已恢复默认备份位置');
 }
 function refreshAutostart(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
@@ -1294,33 +1408,28 @@ function resetDemo(){
   state.detailId=null;render();toast('已恢复示例数据');
 }
 
-/* ================= 本地持久化(SQLite) ================= */
-const DB={ready:false,inv:null,name:'sqlite:dodo.db',
-  dbUrl(){
-    const d=(settings.dataDir||'').replace(/[\\/]+$/,'');
-    return d?`sqlite:${d}\\dodo.db`:'sqlite:dodo.db';
-  },
+/* ================= 本地持久化(SQLite,读写统一走数据目录 filePath) ================= */
+const DB={ready:false,inv:null,
   async init(){
     const inv=window.__TAURI__?.core?.invoke;
     if(!inv)return;
-    this.name=this.dbUrl();
+    this.inv=inv;
+    // legacy=旧默认库:目标库全新时自动搬迁数据(自定义数据位置无缝接续)
+    const legacy=defaultDataDir?defaultDataDir.replace(/[\\/]+$/,'')+'/dodo.db':undefined;
     try{
-      await inv('plugin:sql|load',{db:this.name});
-      this.inv=inv;this.ready=true;
+      await inv('sqlite_init',{path:this.filePath(),legacy});
+      this.ready=true;
     }catch(e){console.warn('[DoDo] SQLite 初始化失败,本次以内存模式运行:',e)}
   },
-  async close(){
-    if(this.inv&&this.name){try{await this.inv('plugin:sql|close',{db:this.name})}catch(e){}}
-    this.ready=false;resetSyncState();
+  async close(){this.ready=false;resetSyncState()},
+  async select(sql,values=[]){
+    if(!this.inv)return[];
+    try{return await this.inv('sqlite_select',{path:this.filePath(),sql,values})||[]}
+    catch(e){console.warn('[DoDo] 查询失败:',e);return[]}
   },
-  async select(sql,values=[]){const r=await this.inv('plugin:sql|select',{db:this.name,sql,values});return r||[]},
-  async exec(sql,values=[]){await this.inv('plugin:sql|execute',{db:this.name,sql,values})},
-  /* 批量写入:Rust 端单连接事务执行;拿不到文件路径时退化为逐条 */
-  async batch(stmts){
-    const p=this.filePath();
-    if(!p){for(const s of stmts)await this.exec(s.sql,s.values);return}
-    await this.inv('sqlite_batch',{path:p,statements:stmts});
-  },
+  async exec(sql,values=[]){await this.inv('sqlite_exec',{path:this.filePath(),sql,values})},
+  /* 批量写入:Rust 端单连接事务执行 */
+  async batch(stmts){await this.inv('sqlite_batch',{path:this.filePath(),statements:stmts})},
   filePath(){const d=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');return d?d.replace(/\\/g,'/')+'/dodo.db':''}
 };
 let syncTimer=null;
@@ -1407,7 +1516,7 @@ async function autoBackup(){
   const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
   if(!dir||lastBackupDate===TODAY)return;
   try{
-    await inv('backup_database',{dir,name:`dodo-${TODAY}.db`,keep:7});
+    await inv('backup_database',{dir,bdir:settings.backupDir||null,name:`dodo-${TODAY}.db`,keep:7});
     lastBackupDate=TODAY;
     await DB.exec("INSERT OR REPLACE INTO meta(key,value) VALUES('lastBackup',?)",[TODAY]);
   }catch(e){console.warn('[DoDo] 自动备份失败:',e)}
@@ -1416,6 +1525,48 @@ async function autoBackup(){
 /* ================= 桌面集成 ================= */
 if(window.__TAURI__?.event?.listen){
   window.__TAURI__.event.listen('quick-add-focus',()=>{$('#qaInput').focus()});
+}
+
+/* ================= 悬浮速记球桥接(球窗为纯视图,逻辑全在主窗) ================= */
+function inv2(cmd,args){const inv=window.__TAURI__?.core?.invoke;if(inv)Promise.resolve(inv(cmd,args)).catch(()=>{})}
+function ballPush(){
+  if(!window.__TAURI__?.event?.emit)return;
+  try{
+    window.__TAURI__.event.emit('ball-state',{
+      today:TODAY,
+      theme:document.documentElement.dataset.theme,
+      visible:settings.ballVisible!==false,
+      lists:LISTS.map(l=>({id:l.id,name:l.name,color:l.color})),
+      tasks:tasks.filter(t=>!t.done?(t.due&&t.due<=TODAY):t.doneAt===TODAY).map(t=>({
+        id:t.id,t:t.title,due:t.due||null,time:t.time||null,list:t.list||null,
+        prio:t.prio||0,rep:t.repeat?fmtRepeat(t.repeat):null,
+        done:!!t.done,doneAt:t.doneAt||null,
+        subs:t.subs&&t.subs.length?t.subs.filter(s=>s.d).length+'/'+t.subs.length:null
+      }))
+    });
+  }catch(e){}
+}
+function ballAdd(text){
+  /* 与主窗今天视图快速添加同一套落点:解析优先,未解析到日期落今天 */
+  const p=parseQuick(text);
+  const title=p.text||text.trim();
+  if(!title)return;
+  tasks.push({id:seq++,title,list:p.list||null,tags:p.tags||[],prio:p.prio||0,
+    due:p.due||TODAY,time:p.time||null,remind:settings.defaultRemind||null,
+    repeat:p.repeat||null,note:'',subs:[],done:false,doneAt:null});
+  render();toast('已添加「'+title+'」');
+}
+if(window.__TAURI__?.event?.listen){
+  const ballOn=(n,f)=>window.__TAURI__.event.listen(n,f);
+  ballOn('ball-ready',()=>{ballPush();inv2('set_ball_visible',settings.ballVisible!==false)});
+  ballOn('ball-toggle',e=>{const id=e.payload&&e.payload.id;if(byId(id)){toggleDone(id);render()}});
+  ballOn('ball-add',e=>{const t=e.payload||{};if(t.text)ballAdd(t.text)});
+  ballOn('ball-del',e=>{const id=e.payload&&e.payload.id;if(byId(id)){deleteTask(id);render()}});
+  ballOn('ball-tomorrow',e=>{const id=e.payload&&e.payload.id;if(byId(id)){moveTomorrow(id);render()}});
+  ballOn('ball-parse',e=>{window.__TAURI__.event.emit('ball-parsed',parseQuick((e.payload&&e.payload.text)||''))});
+  ballOn('ball-hide',()=>{settings.ballVisible=false;saveSettings();inv2('set_ball_visible',false);if(settingsTab==='general')buildSettings()});
+  ballOn('ball-error',e=>{toast('球窗错误: '+((e.payload&&e.payload.m)||''))});
+  ballOn('open-settings',()=>{openSettings('general')});
 }
 
 /* ================= 启动 ================= */
@@ -1437,6 +1588,6 @@ async function boot(){
   }
 }
 boot();
-function render(){TODAY=iso(new Date());buildSidebar();buildMain();buildDetail();scheduleSync()}
+function render(){TODAY=iso(new Date());buildSidebar();buildMain();buildDetail();scheduleSync();ballPush()}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){reviveRepeats();render()}});
 

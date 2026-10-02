@@ -4,13 +4,14 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconEvent,
-    Emitter, Manager, WindowEvent,
+    Emitter, Listener, Manager, WindowEvent,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 use std::os::windows::process::CommandExt;
+use sqlx::{Column, Row};
 
 const APP_ID: &str = "com.dodo.todo";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -132,15 +133,31 @@ fn autostart_disable(app: tauri::AppHandle) -> Result<(), String> {
     app.autolaunch().disable().map_err(|e| e.to_string())
 }
 
-/// 每日自动备份:复制 dodo.db 到 backups 子目录(文件名带日期),按文件名倒序保留最近 keep 份
+/// 显示/隐藏悬浮球窗口(设置→通用 开关)
 #[tauri::command]
-fn backup_database(dir: String, name: String, keep: u32) -> Result<String, String> {
+fn set_ball_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("ball") {
+        if visible {
+            w.show().map_err(|e| e.to_string())?;
+        } else {
+            let _ = w.hide();
+        }
+    }
+    Ok(())
+}
+
+/// 每日自动备份:复制 dodo.db 到备份文件夹(bdir 为空时用数据目录 backups 子目录),文件名带日期,按文件名倒序保留最近 keep 份
+#[tauri::command]
+fn backup_database(dir: String, bdir: Option<String>, name: String, keep: u32) -> Result<String, String> {
     let base = std::path::Path::new(&dir);
     let src = base.join("dodo.db");
     if !src.exists() {
         return Ok(String::new());
     }
-    let bdir = base.join("backups");
+    let bdir = match bdir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => base.join("backups"),
+    };
     std::fs::create_dir_all(&bdir).map_err(|e| e.to_string())?;
     let dest = bdir.join(&name);
     if !dest.exists() {
@@ -159,7 +176,7 @@ fn backup_database(dir: String, name: String, keep: u32) -> Result<String, Strin
 }
 
 /// 批量写入:单连接事务执行一组语句。
-/// tauri-plugin-sql 的池是多连接,前端分开调 BEGIN/COMMIT 不可靠,事务必须在 Rust 侧包。
+/// 前端所有读写都走这里的显式 path(= 数据目录/dodo.db),保证读写同源。
 #[derive(serde::Deserialize)]
 struct Stmt {
     sql: String,
@@ -167,34 +184,184 @@ struct Stmt {
     values: Vec<serde_json::Value>,
 }
 
-#[tauri::command]
-async fn sqlite_batch(path: String, statements: Vec<Stmt>) -> Result<(), String> {
+fn bind_vals<'a>(
+    mut q: sqlx::query::Query<'a, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'a>>,
+    values: &'a [serde_json::Value],
+) -> sqlx::query::Query<'a, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'a>> {
+    for v in values {
+        q = match v {
+            serde_json::Value::Null => q.bind(None::<i64>),
+            serde_json::Value::Bool(b) => q.bind(*b),
+            serde_json::Value::Number(n) => match n.as_i64() {
+                Some(i) => q.bind(i),
+                None => q.bind(n.as_f64().unwrap_or_default()),
+            },
+            serde_json::Value::String(s) => q.bind(s.as_str()),
+            // repeat 规则等以 JSON 对象直接传参,与插件行为一致存为 JSON 文本
+            _ => q.bind(v.to_string()),
+        };
+    }
+    q
+}
+
+async fn connect_db(path: &str, create: bool) -> Result<sqlx::SqlitePool, String> {
     let opts = sqlx::sqlite::SqliteConnectOptions::new()
-        .filename(&path)
-        .create_if_missing(false);
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .filename(path)
+        .create_if_missing(create);
+    sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
         .connect_with(opts)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
+
+/// 打开数据库并确保表结构就绪(INIT_SQL + history/nextDue 补列,等价旧插件迁移 v1~v3)。
+/// legacy = 旧默认库路径:目标库是全新的(meta 为空)而旧库有数据时,一次性自动搬迁,
+/// 保证「自定义数据位置」切换后旧数据跟着走;已用过的目标库不会被覆盖。
+#[tauri::command]
+async fn sqlite_init(path: String, legacy: Option<String>) -> Result<(), String> {
+    let pool = connect_db(&path, true).await?;
+    let res = async {
+        let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+        for s in INIT_SQL.split(';') {
+            let s = s.trim();
+            if !s.is_empty() {
+                sqlx::query(s).execute(&mut *conn).await.map_err(|e| e.to_string())?;
+            }
+        }
+        let cols: Vec<String> = sqlx::query("PRAGMA table_info(tasks)")
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| e.to_string())?
+            .iter()
+            .filter_map(|r| r.try_get::<String, _>(1).ok())
+            .collect();
+        if !cols.contains(&"history".to_string()) {
+            sqlx::query("ALTER TABLE tasks ADD COLUMN history TEXT DEFAULT '[]'")
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if !cols.contains(&"nextDue".to_string()) {
+            sqlx::query("ALTER TABLE tasks ADD COLUMN nextDue TEXT")
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some(lp) = legacy {
+            if lp != path && std::path::Path::new(&lp).exists() {
+                let meta_cnt: i64 =
+                    sqlx::query("SELECT COUNT(*) FROM meta").fetch_one(&mut *conn).await.map_err(|e| e.to_string())?.try_get(0).map_err(|e| e.to_string())?;
+                if meta_cnt == 0 {
+                    let quoted = lp.replace('\'', "''");
+                    let mig = async {
+                        sqlx::query(&format!("ATTACH DATABASE '{quoted}' AS legacy_db"))
+                            .execute(&mut *conn)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        for t in ["tasks", "lists", "meta"] {
+                            sqlx::query(&format!(
+                                "INSERT OR REPLACE INTO {t} SELECT * FROM legacy_db.{t}"
+                            ))
+                            .execute(&mut *conn)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                        sqlx::query("DETACH DATABASE legacy_db")
+                            .execute(&mut *conn)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Ok::<(), String>(())
+                    }
+                    .await;
+                    if let Err(e) = mig {
+                        // 旧库结构不符时跳过搬迁,目标库仍可用(空库)
+                        eprintln!("[DoDo] 旧库搬迁跳过: {e}");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    .await;
+    pool.close().await;
+    res
+}
+
+/// 查询:返回 JSON 对象数组(列名 → 值)
+#[tauri::command]
+async fn sqlite_select(
+    path: String,
+    sql: String,
+    values: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let pool = connect_db(&path, false).await?;
+    let res = async {
+        let rows = bind_vals(sqlx::query(&sql), &values)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let mut m = serde_json::Map::new();
+            for (i, col) in row.columns().iter().enumerate() {
+                // SQLite 无严格类型,按 INTEGER → REAL → TEXT → BLOB 逐级尝试解码
+                let v = match row.try_get::<Option<i64>, _>(i) {
+                    Ok(Some(n)) => serde_json::Value::from(n),
+                    Ok(None) => serde_json::Value::Null,
+                    Err(_) => match row.try_get::<Option<f64>, _>(i) {
+                        Ok(Some(f)) => serde_json::Value::from(f),
+                        Ok(None) => serde_json::Value::Null,
+                        Err(_) => match row.try_get::<Option<String>, _>(i) {
+                            Ok(Some(s)) => serde_json::Value::from(s),
+                            Ok(None) => serde_json::Value::Null,
+                            Err(_) => match row.try_get::<Option<Vec<u8>>, _>(i) {
+                                Ok(Some(b)) => {
+                                    serde_json::Value::from(String::from_utf8_lossy(&b).to_string())
+                                }
+                                _ => serde_json::Value::Null,
+                            },
+                        },
+                    },
+                };
+                m.insert(col.name().to_string(), v);
+            }
+            out.push(serde_json::Value::Object(m));
+        }
+        Ok(out)
+    }
+    .await;
+    pool.close().await;
+    res
+}
+
+/// 单条写语句(meta 标记等)
+#[tauri::command]
+async fn sqlite_exec(path: String, sql: String, values: Vec<serde_json::Value>) -> Result<(), String> {
+    let pool = connect_db(&path, true).await?;
+    let res = async {
+        let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+        bind_vals(sqlx::query(&sql), &values)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        tx.commit().await.map_err(|e| e.to_string())
+    }
+    .await;
+    pool.close().await;
+    res
+}
+
+#[tauri::command]
+async fn sqlite_batch(path: String, statements: Vec<Stmt>) -> Result<(), String> {
+    let pool = connect_db(&path, false).await?;
     let res = async {
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
         for s in &statements {
-            let mut q = sqlx::query(&s.sql);
-            for v in &s.values {
-                q = match v {
-                    serde_json::Value::Null => q.bind(None::<i64>),
-                    serde_json::Value::Bool(b) => q.bind(*b),
-                    serde_json::Value::Number(n) => match n.as_i64() {
-                        Some(i) => q.bind(i),
-                        None => q.bind(n.as_f64().unwrap_or_default()),
-                    },
-                    serde_json::Value::String(s) => q.bind(s.as_str()),
-                    // repeat 规则等以 JSON 对象直接传参,与插件行为一致存为 JSON 文本
-                    _ => q.bind(v.to_string()),
-                };
-            }
-            q.execute(&mut *tx).await.map_err(|e| e.to_string())?;
+            bind_vals(sqlx::query(&s.sql), &s.values)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         }
         tx.commit().await.map_err(|e| e.to_string())
     }
@@ -282,6 +449,34 @@ fn main() {
             )?;
             app.global_shortcut().register(sc)?;
 
+            // ---- 悬浮速记球:置顶透明小窗,内容/位置/展开由前端 ball.js 管理 ----
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "ball",
+                tauri::WebviewUrl::App("ball.html".into()),
+            )
+            .title("DoDo 速记球")
+            .inner_size(62.0, 62.0)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .shadow(false)
+            .focused(false)
+            .visible(false) // 前端定位完成后经 ball-ready 触发显示
+            .build()?;
+
+            // 球右键「打开主窗口」→ 唤起主界面
+            let handle = app.handle().clone();
+            app.listen("ball-open-main", move |_| show_main(&handle));
+            // 球右键「设置」→ 唤起主界面并打开设置页
+            let handle2 = app.handle().clone();
+            app.listen("ball-open-settings", move |_| {
+                show_main(&handle2);
+                let _ = handle2.emit_to("main", "open-settings", ());
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -293,6 +488,9 @@ fn main() {
             autostart_enable,
             autostart_disable,
             backup_database,
+            sqlite_init,
+            sqlite_select,
+            sqlite_exec,
             sqlite_batch
         ])
         .on_window_event(|window, event| {
