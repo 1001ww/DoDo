@@ -55,6 +55,7 @@ const I={
   sub:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
   edit:'<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   palette:'<path d="M12 3a9 9 0 1 0 .46 18H14a2 2 0 0 0 1.56-3.25 1.5 1.5 0 0 1 1.18-2.44h2.06A3.7 3.7 0 0 0 22.5 11.6C22.06 6.79 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.2" cy="7.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.8" cy="7" r="1.2" fill="currentColor" stroke="none"/>',
   db:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>',
@@ -201,6 +202,11 @@ function groups(){
 }
 
 /* ================= 任务行 ================= */
+/* 标题高亮:搜索状态下把命中片段包上 <mark>(先转义再替换,防注入) */
+function hlTitle(s){
+  const q=state.search.trim();if(!q)return esc(s);
+  return esc(s).replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),m=>`<mark>${m}</mark>`);
+}
 function taskRow(t,opts={}){
   const l=t.list?listById(t.list):null;
   const df=t.due?diffDays(TODAY,t.due):null;
@@ -210,7 +216,7 @@ function taskRow(t,opts={}){
   <div class="task-row ${t.done?'done':''}" data-open="${t.id}">
     <button class="checkbox ${t.done?'checked':''}" data-toggle="${t.id}">${CHECK_SVG}</button>
     <div class="task-main">
-      <div><span class="tt">${esc(t.title)}</span><span class="chips">${(t.tags||[]).map(tg=>`<span class="tchip">${esc(tg)}</span>`).join('')}</span></div>
+      <div><span class="tt">${hlTitle(t.title)}</span><span class="chips">${(t.tags||[]).map(tg=>`<span class="tchip">${esc(tg)}</span>`).join('')}</span></div>
       ${(l||t.due||t.time||t.repeat||subs.length)?`<div class="meta">
         ${l?`<span class="m-item"><span class="ldot" style="background:${l.color}"></span>${esc(l.name)}</span>`:''}
         ${t.time?`<span class="m-item">${ic('clock',12)}${fmtTime(t.time)}</span>`:''}
@@ -327,6 +333,23 @@ function buildMain(){
         </div>`).join('')}</div></div>`;
     return;
   }
+  /* 全局搜索结果页(W7):标题+备注跨全库匹配,顶栏回车进入;按 清单/收件箱/已完成 分组 */
+  if(v==='search'){
+    const q=state.search.trim().toLowerCase();
+    const res=tasks.filter(t=>(t.title+' '+(t.note||'')).toLowerCase().includes(q));
+    const secs=LISTS.map(l=>({title:l.name,items:res.filter(t=>!t.done&&t.list===l.id).sort(cmp)}))
+      .concat([{title:'收件箱',items:res.filter(t=>!t.done&&!t.list).sort(cmp)},
+               {title:'已完成',items:res.filter(t=>t.done).sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||''))}])
+      .filter(s=>s.items.length);
+    const head=`<div class="view-title">搜索</div><div class="view-sub">跨清单与已完成任务,匹配标题和备注;清空搜索框即退出</div>`;
+    const stat=`<span>搜索“${esc(state.search.trim())}” · ${res.length} 个结果</span>`;
+    const body=secs.length?secs.map(g=>`<div class="group">
+        <div class="group-title">${esc(g.title)}<span class="cnt">${g.items.length}</span></div>
+        ${g.items.map(t=>taskRow(t)).join('')}</div>`).join('')
+      :emptyState('inbox','没有找到匹配的任务','试试更换关键词,搜索范围含标题与备注');
+    el.innerHTML=`<div class="${av}"><div class="view-head"><div>${head}</div><div class="view-stat">${stat}</div></div>${body}</div>`;
+    return;
+  }
   /* 列表类视图 */
   const G=groups();
   const flat=G.flatMap(x=>x.items);
@@ -400,7 +423,7 @@ function buildDetail(){
       <div class="d-prop" data-menu="tags">${ic('tag',15)}<span class="p-label">标签</span>
         <span class="p-val">${(t.tags||[]).length?(t.tags||[]).map(tg=>`<span class="tchip">${esc(tg)}</span>`).join(''):`<span class="ph">添加标签</span>`}${ic('chevR',13)}</span></div>
     </div>
-    <div class="d-foot"><button class="d-del" data-del="${t.id}">${ic('trash',15)}删除任务</button></div>`;
+    <div class="d-foot"><button class="d-copy" data-copy="${t.id}">${ic('copy',15)}复制任务</button><button class="d-del" data-del="${t.id}">${ic('trash',15)}删除任务</button></div>`;
   fitTitle($('#detailInner .d-title'));
 }
 /* 标题按内容自适应高度(换行显示);回车确认,不插换行 */
@@ -505,15 +528,39 @@ function propMenu(kind,anchor){
 }
 
 /* ================= 快速添加(自然语言) ================= */
+/* 中文数字→数值:支持 零一二两三四五六七八九十 / 十X / X十 / X十Y(时刻范围足够) */
+function cnNum(s){
+  const D={'零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+  if(/^\d+$/.test(s))return+s;
+  if(!s||!/^[零一二两三四五六七八九十]+$/.test(s))return NaN;
+  const i=s.indexOf('十');
+  if(i<0)return D[s]??NaN;
+  const a=s.slice(0,i),b=s.slice(i+1);
+  return(a?D[a]:1)*10+(b?D[b]:0);
+}
 function parseQuick(raw){
   /* 全角标点归一化(中文输入法场景) */
   let text=raw.replace(/[！＃＠]/g,c=>({'！':'!','＃':'#','＠':'@'}[c]));
+  /* 中文数字时刻归一化:下午三点→下午3点、十二点半→12点半、三点十五分→3点15分 */
+  text=text.replace(/(上午|早上|中午|下午|晚上|凌晨)?\s*([零一二两三四五六七八九十]{1,3})点(?:([零一二两三四五六七八九十]{1,3})分)?/g,(w,ap,h,mm)=>{
+    const hn=cnNum(h);if(!(hn>=1&&hn<=24))return w;
+    let out=(ap||'')+hn+'点';
+    if(mm!==undefined){const mn=cnNum(mm);if(mn>=0&&mn<=59)out+=mn+'分'}
+    return out;
+  });
   const chips=[];let due=null,time=null,list=null,prio=0,repeat=null;const tags=[];
   const take=re=>{const m=text.match(re);if(m){text=text.replace(m[0],' ').trim();return m}return null};
   let m;
+  /* 英文时刻:3pm / 10:30am(必须先于数字时刻,否则 3:30pm 会被截成 3:30) */
+  if(m=take(/\b(0?[0-9]|1[0-2])(?::([0-5]\d))?\s*(am|pm)\b/i)){
+    let hh=+m[1];const mm=m[2]?+m[2]:0;
+    if(/pm/i.test(m[3])&&hh<12)hh+=12;
+    if(/am/i.test(m[3])&&hh===12)hh=0;
+    time=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;chips.push({k:'date',v:time});
+  }
   /* 时刻:14:00 / 14点 / 下午3点半 / 上午9:30 */
-  if(m=take(/(?:上午|中午|下午|晚上)?\s*\d{1,2}[:：点]\d{0,2}分?半?/)){
-    const am=m[0].match(/上午|中午|下午|晚上/)?.[0];
+  if(!time&&(m=take(/(?:上午|早上|中午|下午|晚上|凌晨)?\s*\d{1,2}[:：点]\d{0,2}分?半?/))){
+    const am=m[0].match(/上午|早上|中午|下午|晚上|凌晨/)?.[0];
     const half=/半/.test(m[0]);
     let s=m[0].replace(/[分\s]/g,'').replace(/[：点]/g,':').replace('半','');
     if(am)s=s.replace(am,'');
@@ -531,12 +578,17 @@ function parseQuick(raw){
     chips.push({k:'date',v:'每周'+(m[1]||'')});
   }
   else if(m=take(/每个?(天|日)/)){repeat={type:'daily',interval:1};chips.push({k:'date',v:'每天'})}
-  /* 相对日期:今天/明天/后天/大后天 */
-  if(m=take(/大后天|后天|明天|今天|今日|明日/)){
-    due=addDays({'今天':0,'今日':0,'明天':1,'明日':1,'后天':2,'大后天':3}[m[0]]);chips.push({k:'date',v:m[0]});
+  /* 相对日期:今天/明天/后天/大后天/tomorrow */
+  if(m=take(/tomorrow|大后天|后天|明天|今天|今日|明日/i)){
+    const off=m[0].toLowerCase()==='tomorrow'?1:{'今天':0,'今日':0,'明天':1,'明日':1,'后天':2,'大后天':3}[m[0]];
+    due=addDays(off);chips.push({k:'date',v:m[0]});
   }
   if(!due&&(m=take(/下个?月(\d{1,2})[日号]?/))){
     const now=new Date();due=iso(new Date(now.getFullYear(),now.getMonth()+1,+m[1]||1));chips.push({k:'date',v:m[0]});
+  }
+  /* 复杂表达:月底=本月最后一天 */
+  if(!due&&(m=take(/月底/))){
+    const now=new Date();due=iso(new Date(now.getFullYear(),now.getMonth()+1,0));chips.push({k:'date',v:'月底'});
   }
   if(!due&&(m=take(/\d{1,2}月\d{1,2}[日号]/))){
     const[a,b]=m[0].match(/\d+/g).map(Number);
@@ -544,12 +596,17 @@ function parseQuick(raw){
     due=iso(d);chips.push({k:'date',v:m[0]});
   }
   if(!due&&(m=take(/\d{4}-\d{1,2}-\d{1,2}/))){const[y,mo,dd]=m[0].split('-').map(Number);due=iso(new Date(y,mo-1,dd));chips.push({k:'date',v:m[0]})}
-  if(!due&&(m=take(/下?周[一二三四五六日天]/))){
-    const wd='一二三四五六日天'.indexOf(m[0].replace('下','').replace('周',''));
-    const now=new Date();let delta=(wd+1-now.getDay()+7)%7;if(delta===0)delta=7;if(m[0].startsWith('下'))delta+=7;
+  if(!due&&(m=take(/(下下|下)?周[一二三四五六日天]/))){
+    const wd='一二三四五六日天'.indexOf(m[0].replace(/下/g,'').replace('周',''));
+    const now=new Date();let delta=(wd+1-now.getDay()+7)%7;if(delta===0)delta=7;
+    delta+=7*(m[0].startsWith('下下')?2:(m[0].includes('下')?1:0));
     due=addDays(delta);chips.push({k:'date',v:m[0]});
   }
-  if(!due&&(m=take(/周末/))){due=addDays((6-new Date().getDay()+7)%7||7);chips.push({k:'date',v:'周末'})}
+  if(!due&&(m=take(/(下下|下)?周末/))){
+    let delta=(6-new Date().getDay()+7)%7||7;
+    delta+=7*(m[0].startsWith('下下')?2:(m[0].includes('下')?1:0));
+    due=addDays(delta);chips.push({k:'date',v:m[0]});
+  }
   if(!due&&(m=text.match(/\d{1,2}[日号]/))){
     const day=parseInt(m[0],10);
     if(day>=1&&day<=31){
@@ -606,6 +663,20 @@ function runParseTests(){
   r=parseQuick('周末大扫除');F(r.due===sat,'周末=最近周六');
   r=parseQuick('下午3点半 开会');F(r.time==='15:30'&&r.text==='开会','下午X点半');
   r=parseQuick('买牛奶');F(r.text==='买牛奶'&&!r.due&&!r.time&&!r.prio&&!r.repeat,'纯标题不被改动');
+  /* W9 解析器增强:中文数字时刻 / 英文日期与时刻 / 复杂表达 */
+  const monthEnd=(()=>{const n=new Date();return iso(new Date(n.getFullYear(),n.getMonth()+1,0))})();
+  const nnWed=(()=>{const n=new Date();let delta=(3-n.getDay()+7)%7||7;return addDays(delta+14)})();
+  const nWeekSat=(()=>{const n=new Date();let delta=(6-n.getDay()+7)%7||7;return addDays(delta+7)})();
+  r=parseQuick('下午三点 开会');F(r.time==='15:00'&&r.text==='开会','中文数字·下午三点');
+  r=parseQuick('中午十二点 吃饭');F(r.time==='12:00'&&r.text==='吃饭','中文数字·中午十二点');
+  r=parseQuick('上午八点半 晨会');F(r.time==='08:30'&&r.text==='晨会','中文数字·上午八点半');
+  r=parseQuick('明天下午三点半 复诊');F(r.due===addDays(1)&&r.time==='15:30'&&r.text==='复诊','中文数字·明天下午三点半');
+  r=parseQuick('tomorrow 3pm 提交报告');F(r.due===addDays(1)&&r.time==='15:00'&&r.text==='提交报告','英文·tomorrow+3pm');
+  r=parseQuick('9pm 加班');F(r.time==='21:00'&&r.text==='加班','英文·9pm');
+  r=parseQuick('3:30pm 银行面签');F(r.time==='15:30'&&r.text==='银行面签','英文·3:30pm');
+  r=parseQuick('月底交房租');F(r.due===monthEnd&&r.text==='交房租','月底=本月最后一天');
+  r=parseQuick('下下周三 复诊');F(r.due===nnWed&&r.text==='复诊','下下周三');
+  r=parseQuick('下周末 露营');F(r.due===nWeekSat&&r.text==='露营','下周末=下周六');
   /* toggleDone 复活排期三分支:结束日归档 / 正常下一轮 / 补完成次日 */
   tasks.push({id:900001,title:'__t_end',due:'2026-01-01',repeat:{type:'daily',interval:1,endDate:'2026-01-01'},done:false});
   toggleDone(900001);
@@ -619,7 +690,7 @@ function runParseTests(){
   tasks.length-=3;
   const fails=tests.filter(Boolean);
   console[fails.length?'error':'log'](`parseQuick 自测: ${tests.length-fails.length}/${tests.length} 通过`,fails.length?fails:'');
-  return fails;
+  return{fails,total:tests.length};
 }
 if(location.search.includes('selftest'))runParseTests();
 function renderQaChips(){
@@ -842,8 +913,8 @@ function toggleHelp(){
   const tok=(c,t)=>`<code class="tok ${c}">${t}</code>`;
   helpEl=document.createElement('div');helpEl.className='qa-help-pop';
   helpEl.innerHTML=`<h4>快速输入语法</h4>
-    <div class="qh-row"><span class="k">截止日期</span><span class="v">${tok('d','今天')}${tok('d','明天')}${tok('d','周五')}${tok('d','下周三')}${tok('d','周末')}${tok('d','9月30日')}${tok('d','下月5号')}${tok('d','2026-10-01')}</span></div>
-    <div class="qh-row"><span class="k">时刻</span><span class="v">${tok('d','14:00')}${tok('d','14点')}${tok('d','下午3点半')}</span></div>
+    <div class="qh-row"><span class="k">截止日期</span><span class="v">${tok('d','今天')}${tok('d','明天')}${tok('d','周五')}${tok('d','下周三')}${tok('d','下下周三')}${tok('d','周末')}${tok('d','月底')}${tok('d','9月30日')}${tok('d','下月5号')}${tok('d','2026-10-01')}${tok('d','tomorrow')}</span></div>
+    <div class="qh-row"><span class="k">时刻</span><span class="v">${tok('d','14:00')}${tok('d','14点')}${tok('d','下午三点')}${tok('d','下午3点半')}${tok('d','3pm')}</span></div>
     <div class="qh-row"><span class="k">清单</span><span class="v">${tok('l','#工作')}<span class="qhn"># + 清单名,可只写前缀</span></span></div>
     <div class="qh-row"><span class="k">标签</span><span class="v">${tok('t','@重点')}<span class="qhn">@ + 标签名,新名字会自动创建</span></span></div>
     <div class="qh-row"><span class="k">优先级</span><span class="v">${tok('p','!高')}${tok('p','高优先级')}${tok('p1','P1')}<span class="qhn">P1 最高</span></span></div>
@@ -943,6 +1014,17 @@ function deleteTask(id){
   state.undo=t;render();
   toast(`已删除「${esc(t.title)}」`,()=>{tasks.push(t);state.undo=null;render()});
 }
+/* W8:复制任务生成副本,标题追加「副本」;完成状态与历史清零,子任务重置为未完成 */
+function copyTask(id){
+  const t=byId(id);if(!t)return;
+  const c=JSON.parse(JSON.stringify(t));
+  c.id=seq++;c.title=t.title+' 副本';
+  c.done=false;c.doneAt=null;c.nextDue=null;c.history=[];
+  if(c.subs)c.subs.forEach(s=>s.d=false);
+  tasks.push(c);
+  state.detailId=c.id;render();
+  toast(`已创建副本「${esc(c.title)}」`);
+}
 function moveTomorrow(id){const t=byId(id);if(!t)return;t.due=addDays(1);render();toast('已移到明天')}
 function toast(msg,undoFn){
   const el=$('#toast');
@@ -987,6 +1069,7 @@ document.addEventListener('click',e=>{
   if(tg){e.stopPropagation();toggleDone(+tg.dataset.toggle);return}
   const mv=e.target.closest('[data-move]');if(mv){e.stopPropagation();moveTomorrow(+mv.dataset.move);return}
   const rs=e.target.closest('[data-restore]');if(rs){e.stopPropagation();toggleDone(+rs.dataset.restore);return}
+  const cp=e.target.closest('[data-copy]');if(cp){e.stopPropagation();copyTask(+cp.dataset.copy);return}
   const dl=e.target.closest('[data-del]');if(dl){e.stopPropagation();deleteTask(+dl.dataset.del);return}
   if(state.detailId!=null){
     const pm=e.target.closest('[data-menu]');if(pm){propMenu(pm.dataset.menu,pm);return}
@@ -1080,7 +1163,11 @@ function reorderSort(kind,id,refId,before){
 }
 /* 输入 */
 document.addEventListener('input',e=>{
-  if(e.target.id==='searchInput'){state.search=e.target.value;buildMain();return}
+  if(e.target.id==='searchInput'){
+    state.search=e.target.value;
+    if(state.view==='search'&&!state.search.trim())state.view='today'; // 清空搜索词即退出结果页
+    buildMain();return;
+  }
   if(e.target.id==='qaInput'){renderQaChips();return}
   const t=state.detailId!=null?byId(state.detailId):null;if(!t)return;
   if(e.target.dataset.field==='title'){t.title=e.target.value;fitTitle(e.target)}
@@ -1092,6 +1179,11 @@ document.addEventListener('keydown',e=>{
   const typing=/INPUT|TEXTAREA/.test(e.target.tagName);
   if(typing){
     if(e.target.id==='qaInput'&&e.key==='Enter'){e.preventDefault();quickAdd()}
+    if(e.target.id==='searchInput'&&e.key==='Enter'){
+      e.preventDefault();
+      if(e.target.value.trim()){state.view='search';closeDetail();render()} // 回车=跨视图全局搜索
+      return;
+    }
     if(e.target.dataset.field==='title'&&e.key==='Enter'){e.preventDefault();e.target.blur()}
     if(e.target.dataset.subadd&&e.key==='Enter'&&e.target.value.trim()){
       const t=byId(state.detailId);(t.subs=t.subs||[]).push({t:e.target.value.trim(),d:false});render()}
@@ -1114,7 +1206,7 @@ function openSettings(tab){
     ov=document.createElement('div');ov.id='settingsOverlay';ov.className='overlay';
     ov.innerHTML=`<div class="sdialog">
       <button class="icon-btn sclose" data-sclose title="关闭">${ic('x',15)}</button>
-      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.2</div></aside>
+      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.3</div></aside>
       <div class="scontent" id="sContent"></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click',settingsClick);
@@ -1191,7 +1283,7 @@ function buildSettings(){
   }else{
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
-        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.2</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.3</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;

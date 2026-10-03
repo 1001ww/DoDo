@@ -34,6 +34,7 @@ body{
   padding:18px;-webkit-font-smoothing:antialiased;overflow:hidden;
 }
 ::selection{background:var(--primary-soft)}
+mark{background:rgba(245,165,36,.35);color:inherit;border-radius:3px;padding:0 1px}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:rgba(128,128,150,.25);border-radius:8px;border:3px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:rgba(128,128,150,.45);background-clip:content-box;border:3px solid transparent}
@@ -233,8 +234,11 @@ code.tok.p1{background:rgba(74,158,245,.12);color:var(--blue)}
 .d-prop .p-val{flex:1;font-size:13px;display:flex;align-items:center;gap:6px;justify-content:flex-end;color:var(--text-1)}
 .d-prop .p-val .ph{color:var(--text-3)}
 .d-prop .p-val .ic{color:var(--text-3)}
-.d-foot{margin-top:auto;padding-top:12px}
-.d-del{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:9px 10px;border-radius:9px;color:var(--red);font-size:13px;transition:background .12s}
+.d-foot{margin-top:auto;padding-top:12px;display:flex;gap:8px}
+.d-copy,.d-del{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;padding:9px 10px;border-radius:9px;font-size:13px;transition:background .12s}
+.d-copy{color:var(--text-2)}
+.d-copy:hover{background:var(--surface-2)}
+.d-del{color:var(--red)}
 .d-del:hover{background:var(--red-soft)}
 
 /* ---------- 设置弹窗 ---------- */
