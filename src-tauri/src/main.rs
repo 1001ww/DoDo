@@ -8,7 +8,6 @@ use tauri::{
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tauri_plugin_sql::{Migration, MigrationKind};
 
 use std::os::windows::process::CommandExt;
 use sqlx::{Column, Row};
@@ -194,33 +193,83 @@ fn set_ball_visible(app: tauri::AppHandle, visible: bool) -> Result<(), String> 
     Ok(())
 }
 
-/// 每日自动备份:复制 dodo.db 到备份文件夹(bdir 为空时用数据目录 backups 子目录),文件名带日期,按文件名倒序保留最近 keep 份
+/// 生效的备份文件夹:自定义 bdir 优先,否则数据目录 backups 子目录
+fn backup_dir_of(base: &std::path::Path, bdir: &Option<String>) -> std::path::PathBuf {
+    match bdir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => base.join("backups"),
+    }
+}
+
+/// 每日自动备份:复制 dodo.db 到备份文件夹(bdir 为空时用数据目录 backups 子目录),文件名带日期,按文件名倒序保留最近 keep 份。
+/// force=true(手动「立即备份」)时同名也覆盖,保证拿到当下时刻的副本;自动备份保持当日仅首份。
 #[tauri::command]
-fn backup_database(dir: String, bdir: Option<String>, name: String, keep: u32) -> Result<String, String> {
+fn backup_database(
+    dir: String,
+    bdir: Option<String>,
+    name: String,
+    keep: u32,
+    force: Option<bool>,
+) -> Result<String, String> {
     let base = std::path::Path::new(&dir);
     let src = base.join("dodo.db");
     if !src.exists() {
         return Ok(String::new());
     }
-    let bdir = match bdir {
-        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
-        _ => base.join("backups"),
-    };
+    let bdir = backup_dir_of(base, &bdir);
     std::fs::create_dir_all(&bdir).map_err(|e| e.to_string())?;
     let dest = bdir.join(&name);
-    if !dest.exists() {
+    if force.unwrap_or(false) || !dest.exists() {
         std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
     }
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&bdir)
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "db"))
+        // 只清理 DoDo 备份命名(dodo-*.db),防止用户自选目录中的其他 .db(含 dodo.db)被当旧备份删除
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "db")
+                && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("dodo-"))
+        })
         .collect();
     files.sort();
     while files.len() > keep as usize {
         let _ = std::fs::remove_file(files.remove(0));
     }
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 备份列表:备份文件夹内 dodo-*.db 备份文件(名称/字节大小/修改时间秒),按名称倒序=最新在前
+#[tauri::command]
+fn list_backups(dir: String, bdir: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    let base = std::path::Path::new(&dir);
+    let bdir = backup_dir_of(base, &bdir);
+    if !bdir.exists() {
+        return Ok(vec![]);
+    }
+    let mut out: Vec<serde_json::Value> = std::fs::read_dir(&bdir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().extension().is_some_and(|x| x == "db")
+                && e.file_name().to_string_lossy().starts_with("dodo-")
+        })
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            Some(serde_json::json!({
+                "name": e.file_name().to_string_lossy(),
+                "size": meta.len(),
+                "modified": modified,
+            }))
+        })
+        .collect();
+    out.sort_by(|a, b| b["name"].as_str().cmp(&a["name"].as_str()));
+    Ok(out)
 }
 
 /// 批量写入:单连接事务执行一组语句。
@@ -307,14 +356,40 @@ async fn sqlite_init(path: String, legacy: Option<String>) -> Result<(), String>
                             .execute(&mut *conn)
                             .await
                             .map_err(|e| e.to_string())?;
-                        for t in ["tasks", "lists", "meta"] {
-                            sqlx::query(&format!(
-                                "INSERT OR REPLACE INTO {t} SELECT * FROM legacy_db.{t}"
-                            ))
+                        // 旧库缺补列时先补齐,保证下方显式列序搬迁不因结构差异静默失败
+                        for (col, dflt) in [("history", " DEFAULT '[]'"), ("nextDue", "")] {
+                            let lcols: Vec<String> = sqlx::query("PRAGMA legacy_db.table_info(tasks)")
+                                .fetch_all(&mut *conn)
+                                .await
+                                .map_err(|e| e.to_string())?
+                                .iter()
+                                .filter_map(|r| r.try_get::<String, _>(1).ok())
+                                .collect();
+                            if !lcols.contains(&col.to_string()) {
+                                sqlx::query(&format!(
+                                    "ALTER TABLE legacy_db.tasks ADD COLUMN {col} TEXT{dflt}"
+                                ))
+                                .execute(&mut *conn)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            }
+                        }
+                        // 显式列序搬迁,不依赖两库列序恰好一致(SELECT * 列序错位会静默写坏)
+                        sqlx::query(
+                            "INSERT OR REPLACE INTO tasks(id,title,note,list,tags,prio,due,time,remind,repeat,done,doneAt,subs,history,nextDue) \
+                             SELECT id,title,note,list,tags,prio,due,time,remind,repeat,done,doneAt,subs,history,nextDue FROM legacy_db.tasks",
+                        )
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                        sqlx::query("INSERT OR REPLACE INTO lists(id,name,color,sort) SELECT id,name,color,sort FROM legacy_db.lists")
                             .execute(&mut *conn)
                             .await
                             .map_err(|e| e.to_string())?;
-                        }
+                        sqlx::query("INSERT OR REPLACE INTO meta(key,value) SELECT key,value FROM legacy_db.meta")
+                            .execute(&mut *conn)
+                            .await
+                            .map_err(|e| e.to_string())?;
                         sqlx::query("DETACH DATABASE legacy_db")
                             .execute(&mut *conn)
                             .await
@@ -420,33 +495,8 @@ async fn sqlite_batch(path: String, statements: Vec<Stmt>) -> Result<(), String>
 
 fn main() {
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations(
-                    "sqlite:dodo.db",
-                    vec![
-                        Migration {
-                            version: 1,
-                            description: "init",
-                            sql: INIT_SQL,
-                            kind: MigrationKind::Up,
-                        },
-                        Migration {
-                            version: 2,
-                            description: "add task history",
-                            sql: "ALTER TABLE tasks ADD COLUMN history TEXT DEFAULT '[]';",
-                            kind: MigrationKind::Up,
-                        },
-                        Migration {
-                            version: 3,
-                            description: "add task nextDue",
-                            sql: "ALTER TABLE tasks ADD COLUMN nextDue TEXT;",
-                            kind: MigrationKind::Up,
-                        },
-                    ],
-                )
-                .build(),
-        )
+        // 注:旧版 tauri-plugin-sql 注册已移除——前端读写全部走本文件的 sqlite_* 自研命令,
+        // 表结构权威路径 = sqlite_init(INIT_SQL + PRAGMA 补列),新增字段勿再走插件 Migration。
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -482,6 +532,7 @@ fn main() {
                 .build(app)?;
 
             // ---- 全局快捷键:Ctrl+Shift+Space 呼出并聚焦快速添加 ----
+            // 注册失败(如已有另一 DoDo 实例在运行占用)不阻断启动,仅记日志
             let sc: Shortcut = "Ctrl+Shift+Space".parse().expect("invalid shortcut");
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
@@ -495,7 +546,9 @@ fn main() {
                     })
                     .build(),
             )?;
-            app.global_shortcut().register(sc)?;
+            if let Err(e) = app.global_shortcut().register(sc) {
+                eprintln!("[DoDo] 全局快捷键注册失败(可能已有 DoDo 实例在运行): {e}");
+            }
 
             // ---- 悬浮速记球:置顶透明小窗,内容/位置/展开由前端 ball.js 管理 ----
             tauri::WebviewWindowBuilder::new(
@@ -540,6 +593,7 @@ fn main() {
             autostart_enable,
             autostart_disable,
             backup_database,
+            list_backups,
             set_ball_visible,
             sqlite_init,
             sqlite_select,

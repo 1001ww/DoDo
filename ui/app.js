@@ -34,6 +34,7 @@ const I={
   inbox:'<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   cal7:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14.5h.01M12 14.5h.01M16 14.5h.01M8 18.5h.01M12 18.5h.01"/>',
   kanban:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/>',
+  chart:'<path d="M18 20V10M12 20V4M6 20v-6"/>',
   calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   layers:'<path d="m12 2 8.5 4.7L12 11.4 3.5 6.7 12 2z"/><path d="m3.5 11.7 8.5 4.7 8.5-4.7"/><path d="m3.5 16.6 8.5 4.7 8.5-4.7"/>',
   check:'<circle cx="12" cy="12" r="9"/><path d="m8.5 12.3 2.4 2.4 4.8-5.2"/>',
@@ -126,7 +127,7 @@ function normRepeat(r){
 /* ================= 状态 ================= */
 let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'today',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
 const SAMPLE=JSON.parse(JSON.stringify(DEMO_TASKS));
-const state={view:'today',search:'',calMonth:null,calSel:TODAY,detailId:null,undo:null,addingList:false,addingTag:false};
+const state={view:'today',search:'',calMonth:null,calSel:TODAY,detailId:null,addingList:false,addingTag:false};
 if(!state.calMonth){const n=new Date();state.calMonth=new Date(n.getFullYear(),n.getMonth(),1)}
 
 /* ================= 侧边栏 ================= */
@@ -136,6 +137,7 @@ const SMART=[
   {id:'upcoming',name:'计划',  icon:'cal7'},
   {id:'kanban',  name:'看板',  icon:'kanban'},
   {id:'calendar',name:'日历',  icon:'calendar'},
+  {id:'stats',   name:'统计',  icon:'chart'},
   {id:'all',     name:'全部',  icon:'layers'},
   {id:'completed',name:'已完成',icon:'check'},
 ];
@@ -331,6 +333,42 @@ function buildMain(){
               ${(t.subs||[]).length?`<span>${ic('checkS',11)}${t.subs.filter(s=>s.d).length}/${t.subs.length}</span>`:''}</div>
             </div>`}).join('')||`<div class="kempty">拖卡片到这里</div>`}</div>
         </div>`).join('')}</div></div>`;
+    return;
+  }
+  /* 统计视图(W13):概览数字 + 近 7 天完成趋势(history/doneAt 并集)+ 未完成清单分布 */
+  if(v==='stats'){
+    const undone=tasks.filter(t=>!t.done).length;
+    const todayDue=tasks.filter(t=>!t.done&&t.due===TODAY).length;
+    const overdue=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<0).length;
+    const doneCnt=tasks.filter(t=>t.done).length;
+    const doneOn=d=>tasks.filter(t=>(t.history||[]).includes(d)||(t.done&&t.doneAt===d)).length;
+    const days=[...Array(7)].map((_,i)=>addDays(i-6));
+    const counts=days.map(doneOn);
+    const max=Math.max(1,...counts),weekSum=counts.reduce((a,b)=>a+b,0);
+    const dist=LISTS.map(l=>({name:l.name,color:l.color,n:tasks.filter(t=>!t.done&&t.list===l.id).length}))
+      .concat([{name:'收件箱',color:'',n:tasks.filter(t=>!t.done&&!t.list).length}])
+      .filter(d=>d.n>0).sort((a,b)=>b.n-a.n);
+    const dmax=Math.max(1,...dist.map(d=>d.n));
+    const card=(num,label,cls)=>`<div class="st-card"><div class="st-num ${cls||''}">${num}</div><div class="st-label">${label}</div></div>`;
+    el.innerHTML=`<div class="${av}">
+      <div class="view-head"><div><div class="view-title">统计</div><div class="view-sub">完成趋势与任务分布,数据来自本机完成记录</div></div></div>
+      <div class="st-cards">
+        ${card(undone,'待办任务')}${card(todayDue,'今日到期','is-pri')}${card(overdue,'逾期','is-red')}${card(doneCnt,'已完成','is-green')}
+      </div>
+      <div class="st-sec"><span>近 7 天完成</span><b>${weekSum} 项</b></div>
+      <div class="st-chart">${days.map((d,i)=>`
+        <div class="st-col ${d===TODAY?'today':''}">
+          <span class="st-cnt">${counts[i]||''}</span>
+          <div class="st-track"><i class="st-bar" style="height:${Math.round(counts[i]/max*100)}%"></i></div>
+          <span class="st-day">${d===TODAY?'今天':WD[parseISO(d).getDay()]}</span>
+        </div>`).join('')}</div>
+      <div class="st-sec"><span>未完成任务分布</span></div>
+      ${dist.length?dist.map(d=>`
+        <div class="st-drow"><span class="st-dname">${esc(d.name)}</span>
+          <div class="st-dtrack"><i style="width:${Math.max(4,Math.round(d.n/dmax*100))}%;background:${d.color||'var(--text-3)'}"></i></div>
+          <span class="st-dnum">${d.n}</span></div>`).join('')
+        :`<div class="st-empty">没有未完成任务,享受当下吧</div>`}
+    </div>`;
     return;
   }
   /* 全局搜索结果页(W7):标题+备注跨全库匹配,顶栏回车进入;按 清单/收件箱/已完成 分组 */
@@ -595,7 +633,13 @@ function parseQuick(raw){
     const now=new Date();let d=new Date(now.getFullYear(),a-1,b);if(d<now)d=new Date(now.getFullYear()+1,a-1,b);
     due=iso(d);chips.push({k:'date',v:m[0]});
   }
-  if(!due&&(m=take(/\d{4}-\d{1,2}-\d{1,2}/))){const[y,mo,dd]=m[0].split('-').map(Number);due=iso(new Date(y,mo-1,dd));chips.push({k:'date',v:m[0]})}
+  if(!due&&(m=text.match(/\d{4}-\d{1,2}-\d{1,2}/))){
+    const[y,mo,dd]=m[0].split('-').map(Number),p=v=>String(v).padStart(2,'0'),d=new Date(y,mo-1,dd);
+    // 越界日期(2026-99-99 / 2026-2-30)不解析也不吞字:round-trip 校验拦截 Date 自动进位
+    if(mo>=1&&mo<=12&&dd>=1&&dd<=31&&iso(d)===`${y}-${p(mo)}-${p(dd)}`){
+      text=text.replace(m[0],' ').trim();due=iso(d);chips.push({k:'date',v:m[0]});
+    }
+  }
   if(!due&&(m=take(/(下下|下)?周[一二三四五六日天]/))){
     const wd='一二三四五六日天'.indexOf(m[0].replace(/下/g,'').replace('周',''));
     const now=new Date();let delta=(wd+1-now.getDay()+7)%7;if(delta===0)delta=7;
@@ -652,6 +696,8 @@ function runParseTests(){
   r=parseQuick('交电费 20号');F(r.due===day20&&r.text==='交电费','X号(未来顺延)');
   r=parseQuick('99号 东西');F(r.due===null&&r.text==='99号 东西','X号越界不解析');
   r=parseQuick('2026-9-8 提交');F(r.due==='2026-09-08','ISO日期补零归一化');
+  r=parseQuick('2026-99-99 提交');F(r.due===null&&r.text==='2026-99-99 提交','ISO越界日期不解析不吞字');
+  r=parseQuick('2026-2-30 交房租');F(r.due===null&&r.text==='2026-2-30 交房租','ISO不存在日期(2月30)不解析');
   r=parseQuick('每周三健身');F(r.repeat&&r.repeat.type==='weekly'&&r.repeat.weekdays[0]===3&&r.due===wed&&r.text==='健身','每周X=重复+最近周三');
   r=parseQuick('每天背单词');F(r.repeat&&r.repeat.type==='daily'&&r.text==='背单词','每天=每日重复');
   F(nextOccur({due:'2026-01-31',repeat:{type:'monthly',interval:1,monthDay:31}})==='2026-02-28','每月31号小月钳制');
@@ -708,12 +754,11 @@ function quickAdd(){
   const p=parseQuick(v);if(!p.text)return;
   let list=p.list,due=p.due;
   if(state.view.startsWith('list:')&&!list)list=state.view.slice(5);
-  if(state.view==='today'&&!due)due=TODAY;
-  if(state.view==='inbox'&&!list)list=null;
   tasks.push({id:seq++,title:p.text,list,tags:p.tags,prio:p.prio,due,time:p.time,remind:settings.defaultRemind||null,repeat:p.repeat||null,
     note:'',subs:[],done:false,doneAt:null});
   inp.value='';renderQaChips();render();
-  toast(`已添加「${esc(p.text)}」${list?'':(due?'':' · 在收件箱')}`);
+  /* 未指明日期=无日期:提示落点,避免在「今天」等视图里看起来像"添加后消失" */
+  toast(`已添加「${esc(p.text)}」${due?'':(list?` · 已入「${esc(listById(list)?.name||'')}」`:' · 在收件箱')}`);
 }
 
 /* ================= 迷你月历浮层(日期/重复共用) ================= */
@@ -1011,8 +1056,8 @@ function deleteTask(id){
   const i=tasks.findIndex(t=>t.id===id);if(i<0)return;
   const[t]=tasks.splice(i,1);
   if(state.detailId===id)closeDetail();
-  state.undo=t;render();
-  toast(`已删除「${esc(t.title)}」`,()=>{tasks.push(t);state.undo=null;render()});
+  render();
+  toast(`已删除「${esc(t.title)}」`,()=>{tasks.push(t);render()});
 }
 /* W8:复制任务生成副本,标题追加「副本」;完成状态与历史清零,子任务重置为未完成 */
 function copyTask(id){
@@ -1127,16 +1172,6 @@ document.addEventListener('drop',e=>{
   if(sortOver){sortOver.el.classList.remove('sort-before','sort-after')}
   sortOver=null;sortDrag=null;
 });
-function moveVal(arr,val,refId,before){
-  const from=arr.indexOf(val);
-  if(from<0||refId===val)return false;
-  const [m]=arr.splice(from,1);
-  let to=arr.indexOf(refId);
-  if(to<0){arr.splice(from,0,m);return false}
-  if(!before)to++;
-  arr.splice(to,0,m);
-  return true;
-}
 function reorderSort(kind,id,refId,before){
   let ok=false;
   if(kind==='list'){
@@ -1206,7 +1241,7 @@ function openSettings(tab){
     ov=document.createElement('div');ov.id='settingsOverlay';ov.className='overlay';
     ov.innerHTML=`<div class="sdialog">
       <button class="icon-btn sclose" data-sclose title="关闭">${ic('x',15)}</button>
-      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.2.3</div></aside>
+      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.3.0</div></aside>
       <div class="scontent" id="sContent"></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click',settingsClick);
@@ -1246,13 +1281,25 @@ function buildSettings(){
   }else if(settingsTab==='data'){
     if(!defaultDataDir&&DB.inv){DB.inv('default_data_dir').then(d=>{defaultDataDir=d;if(settingsTab==='data')buildSettings()}).catch(()=>{})}
     const curDir=settings.dataDir||defaultDataDir;
+    refreshBackups();
+    const bkRows=backupsCache?backupsCache.map(b=>{
+      const armed=restoreArm===b.name;
+      const d=b.name.replace(/^dodo-/,'').replace(/\.db$/,'');
+      const lbl=/^\d{4}-\d{2}-\d{2}$/.test(d)?d+(d===TODAY?'(今天)':''):b.name;
+      return`<div class="mrow" style="cursor:default">
+        <span style="flex:1;min-width:0"><span class="mname" style="display:block">${esc(lbl)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${fmtSize(b.size)} · ${b.modified?new Date(b.modified*1000).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</span></span>
+        <button class="sbtn ${armed?'danger':''}" data-bkrestore="${esc(b.name)}">${armed?'确认恢复':'恢复'}</button></div>`}).join('')
+      :`<div class="mrow" style="cursor:default;color:var(--text-3);font-size:12.5px">${backupsCache===null?'加载中…':'暂无备份,点上方「立即备份」创建'}</div>`;
     c.innerHTML=`<h3>数据</h3><div class="sdesc">任务数据保存在本地 SQLite;更改存储位置后自动迁移现有数据</div>
       <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">存储位置</div><div class="sd" style="word-break:break-all">${esc(curDir||'获取中…')}${settings.dataDir?'(自定义)':'(默认)'}</div></div></div>
       <div class="srow" style="cursor:default"><div><div class="sl">位置维护</div><div class="sd">可放到网盘目录实现多机备份;不影响导出与示例数据重置</div></div>
         <div style="display:flex;gap:8px;flex:none"><button class="sbtn" data-sact="openfolder">打开文件夹</button><button class="sbtn" data-sact="changedir">更改位置</button>${settings.dataDir?`<button class="sbtn" data-sact="resetdir">恢复默认</button>`:''}</div></div>
-      <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">自动备份</div><div class="sd">每日首次启动自动备份数据库,保留最近 7 份${lastBackupDate?`;上次备份 ${lastBackupDate}`:''};恢复=关闭应用后把备份文件改名 dodo.db 覆盖回数据目录</div></div>
-        <div style="display:flex;gap:8px;flex:none"><button class="sbtn" data-sact="openbackups">打开备份夹</button><button class="sbtn" data-sact="changebackupdir">更改位置</button>${settings.backupDir?`<button class="sbtn" data-sact="resetbackupdir">恢复默认</button>`:''}</div></div>
-      <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">备份位置</div><div class="sd" style="word-break:break-all">${esc(backupLoc()||'获取中…')}${settings.backupDir?'(自定义)':'(数据目录 backups 子文件夹)'}</div></div></div>
+      <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">自动备份</div><div class="sd">每日首次启动自动备份数据库,保留最近 7 份${lastBackupDate?`;上次备份 ${lastBackupDate}`:''}</div></div>
+        <div style="display:flex;gap:8px;flex:none"><button class="sbtn" data-sact="backupnow">立即备份</button><button class="sbtn" data-sact="openbackups">打开备份夹</button><button class="sbtn" data-sact="changebackupdir">更改位置</button>${settings.backupDir?`<button class="sbtn" data-sact="resetbackupdir">恢复默认</button>`:''}</div></div>
+      <div class="srow" style="cursor:default;align-items:flex-start;padding-bottom:4px"><div><div class="sl">备份列表</div><div class="sd">「恢复」将该备份覆盖回当前数据库并立即重载,可覆盖现有任务</div></div></div>
+      <div class="mlist">${bkRows}</div>
+      <div class="srow" style="cursor:default;margin-top:4px"><div style="min-width:0"><div class="sl">备份位置</div><div class="sd" style="word-break:break-all">${esc(backupLoc()||'获取中…')}${settings.backupDir?'(自定义)':'(数据目录 backups 子文件夹)'}</div></div></div>
       <div class="srow" style="cursor:default"><div><div class="sl">导出任务</div><div class="sd">将当前清单与任务导出为 JSON 文件</div></div><button class="sbtn" data-sact="export">导出</button></div>
       <div class="srow" style="cursor:default"><div><div class="sl">恢复示例数据</div><div class="sd">清空当前改动,还原到初始演示数据</div></div><button class="sbtn danger" data-sact="reset">重置</button></div>`;
   }else if(settingsTab==='lists'){
@@ -1266,8 +1313,8 @@ function buildSettings(){
       if(editState.mode==='list'&&editState.id===l.id)return editRow('list',l.name,true);
       return`<div class="mrow" draggable="true" data-sortrow="list" data-sortid="${esc(l.id)}"><span class="grip" title="拖动排序">${ic('grip',12)}</span><span class="dot" style="background:${l.color}"></span>
         <span class="mname">${esc(l.name)}</span><span class="mcount">${lcnt(l)} 项</span>
-        <button class="row-btn" data-mact="edit" data-mkind="list" data-mid="${l.id}" title="编辑">${ic('edit',14)}</button>
-        <button class="row-btn" data-mact="del" data-mkind="list" data-mid="${l.id}" title="删除">${ic('trash',14)}</button></div>`;
+        <button class="row-btn" data-mact="edit" data-mkind="list" data-mid="${esc(l.id)}" title="编辑">${ic('edit',14)}</button>
+        <button class="row-btn" data-mact="del" data-mkind="list" data-mid="${esc(l.id)}" title="删除">${ic('trash',14)}</button></div>`;
     }).join('');
     const tagRows=tagList().map(tg=>{
       if(editState.mode==='tag'&&editState.id===tg)return editRow('tag',tg,false);
@@ -1283,7 +1330,7 @@ function buildSettings(){
   }else{
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
-        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.2.3</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.3.0</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;
@@ -1339,9 +1386,18 @@ function settingsClick(e){
   }
   if(e.target.closest('[data-msave]')){commitManage();return}
   if(e.target.closest('[data-mcancel]')){editState={mode:null,id:null,color:null};buildSettings();return}
+  const bk=e.target.closest('[data-bkrestore]');
+  if(bk){
+    if(restoreArm===bk.dataset.bkrestore){clearTimeout(restoreArmTimer);restoreArm='';doRestoreBackup(bk.dataset.bkrestore)}
+    else{restoreArm=bk.dataset.bkrestore;buildSettings();
+      clearTimeout(restoreArmTimer);
+      restoreArmTimer=setTimeout(()=>{if(restoreArm){restoreArm='';if(settingsTab==='data')buildSettings()}},3000)}
+    return;
+  }
   const act=e.target.closest('[data-sact]');if(act){
     const a=act.dataset.sact;
     if(a==='export'){exportData();return}
+    if(a==='backupnow'){backupNow();return}
     if(a==='openfolder'){openDataFolder();return}
     if(a==='openbackups'){openBackups();return}
     if(a==='changebackupdir'){changeBackupDir();return}
@@ -1456,7 +1512,50 @@ async function openDataFolder(){
 function backupLoc(){
   if(settings.backupDir)return settings.backupDir.replace(/[\\/]+$/,'');
   const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
-  return dir?dir+'/backups':'';
+  if(!dir)return'';return dir+(dir.includes('\\')?'\\':'/')+'backups'; // 分隔符随数据目录,避免 D:\DoDo\data/backups 混排
+}
+/* W14 备份管理:列表查看 / 立即备份 / 一键恢复 */
+const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':n+' B';
+let backupsCache=null,restoreArm='',restoreArmTimer=null;
+async function refreshBackups(){
+  const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
+  const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
+  if(!dir)return;
+  try{
+    const list=await inv('list_backups',{dir,bdir:settings.backupDir||null});
+    if(JSON.stringify(list)===JSON.stringify(backupsCache))return; // 未变化不重渲染,防循环
+    backupsCache=list;
+    if(settingsTab==='data')buildSettings();
+  }catch(e){console.warn('[DoDo] 备份列表加载失败:',e)}
+}
+async function backupNow(){
+  const inv=window.__TAURI__?.core?.invoke;if(!inv){toast('桌面端才能手动备份');return}
+  const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
+  if(!dir){toast('数据目录获取中,稍后再试');return}
+  try{
+    await inv('backup_database',{dir,bdir:settings.backupDir||null,name:`dodo-${TODAY}.db`,keep:7,force:true});
+    lastBackupDate=TODAY;
+    try{await DB.exec("INSERT OR REPLACE INTO meta(key,value) VALUES('lastBackup',?)",[TODAY])}catch(e){}
+    await refreshBackups();buildSettings();toast('已创建备份');
+  }catch(e){toast('备份失败:'+(e.message||e))}
+}
+async function doRestoreBackup(name){
+  const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
+  const loc=backupLoc();if(!loc){toast('备份目录获取中,稍后再试');return}
+  const sep=loc.includes('\\')?'\\':'/';
+  const wasReady=DB.ready;
+  DB.ready=false;resetSyncState(); // 暂停增量同步,防止恢复瞬间把旧内存状态写回恢复后的库
+  try{
+    await inv('fs_copy',{from:loc+sep+name,to:DB.filePath()});
+    await DB.init();await loadAll();reviveRepeats();scheduleSync();
+    backupsCache=null;restoreArm='';
+    buildSettings();render();
+    toast(`已恢复 ${name.replace(/^dodo-/,'').replace(/\.db$/,'')} 的备份`);
+  }catch(e){
+    if(wasReady){try{await DB.init()}catch(_){/* 恢复可用状态 */}}
+    restoreArm='';buildSettings();
+    toast('恢复失败:'+(e.message||e));
+  }
 }
 async function openBackups(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
@@ -1472,6 +1571,10 @@ async function changeBackupDir(){
   try{picked=await inv('plugin:dialog|open',{options:{directory:true,title:'选择自动备份文件夹',multiple:false}})}
   catch(e){toast('选择失败:'+e.message);return}
   if(!picked)return;
+  try{
+    const sep=picked.includes('\\')?'\\':'/';
+    if(await inv('fs_exists',{path:picked+sep+'dodo.db'})===true){toast('该文件夹包含 dodo.db,为防误清理请选择其他文件夹');return}
+  }catch(e){}
   const dir=picked.replace(/[\\/]+$/,'');
   if(normDir(dir)===normDir(backupLoc())){toast('位置未变化');return}
   try{await inv('make_dir',{path:dir})}catch(e){}
@@ -1497,7 +1600,8 @@ function exportData(){
 }
 function resetDemo(){
   tasks=JSON.parse(JSON.stringify(SAMPLE));
-  state.detailId=null;render();toast('已恢复示例数据');
+  syncBlocked=false; // 示例数据是用户主动重置,解除加载失败的写库封锁
+  state.detailId=null;render();scheduleSync();toast('已恢复示例数据');
 }
 
 /* ================= 本地持久化(SQLite,读写统一走数据目录 filePath) ================= */
@@ -1531,7 +1635,7 @@ let synced=new Map(),syncedLists='',syncedMeta=''; // 上次成功落库的快�
 function resetSyncState(){synced=new Map();syncedLists='';syncedMeta=''}
 function snapshotTasks(){return new Map(tasks.map(t=>{const a=taskPack(t);return[t.id,{key:a.join('\u0001'),args:a}]}))}
 async function syncAll(){
-  if(!DB.ready)return;
+  if(!DB.ready||syncBlocked)return;
   try{
     const rows=snapshotTasks();
     const listsKey=JSON.stringify(LISTS),metaKey=JSON.stringify([seq,EXTRA_TAGS]);
@@ -1553,16 +1657,19 @@ async function syncAll(){
     synced=rows;syncedLists=listsKey;syncedMeta=metaKey;
   }catch(e){console.warn('[DoDo] 数据同步失败:',e)}
 }
-function mapRow(r){return{id:r.id,title:r.title,note:r.note||'',list:r.list||null,tags:JSON.parse(r.tags||'[]'),
+/* JSON 字段容错解析:单个字段损坏只丢该字段,不再让整次加载失败而写库覆盖(F3) */
+const jparse=(s,d)=>{try{const v=JSON.parse(s);return v??d}catch(e){return d}};
+function mapRow(r){return{id:r.id,title:r.title||'',note:r.note||'',list:r.list||null,tags:jparse(r.tags,[]),
   prio:r.prio||0,due:r.due||null,time:r.time||null,remind:r.remind||null,repeat:normRepeat(r.repeat),
-  done:!!r.done,doneAt:r.doneAt||null,nextDue:r.nextDue||null,subs:JSON.parse(r.subs||'[]'),history:JSON.parse(r.history||'[]')}}
+  done:!!r.done,doneAt:r.doneAt||null,nextDue:r.nextDue||null,subs:jparse(r.subs,[]),history:jparse(r.history,[])}}
+let syncBlocked=false; // loadAll 失败时置位:拒绝增量写库,防止内存默认值覆盖库中数据(F3)
 async function loadAll(){
   if(!DB.ready)return;
   try{
     const rows=await DB.select('SELECT * FROM tasks');
     if(!rows.length){
       const seeded=await DB.select("SELECT value FROM meta WHERE key='seeded'");
-      if(!seeded.length){await syncAll();await DB.exec("INSERT OR REPLACE INTO meta(key,value) VALUES('seeded','1')");return}
+      if(!seeded.length){syncBlocked=false;await syncAll();await DB.exec("INSERT OR REPLACE INTO meta(key,value) VALUES('seeded','1')");return}
     }
     tasks=rows.map(mapRow).sort((a,b)=>a.id-b.id);
     const ls=await DB.select('SELECT * FROM lists ORDER BY sort');
@@ -1573,7 +1680,8 @@ async function loadAll(){
       else if(m.key==='lastBackup')lastBackupDate=m.value||'';
     }
     synced=snapshotTasks();syncedLists=JSON.stringify(LISTS);syncedMeta=JSON.stringify([seq,EXTRA_TAGS]);
-  }catch(e){console.warn('[DoDo] 数据加载失败:',e)}
+    syncBlocked=false;
+  }catch(e){console.warn('[DoDo] 数据加载失败,已暂停写库以防默认值覆盖:',e);syncBlocked=true}
 }
 const notified=new Set();
 async function sendNotify(title,body){
@@ -1639,14 +1747,15 @@ function ballPush(){
   }catch(e){}
 }
 function ballAdd(text){
-  /* 与主窗今天视图快速添加同一套落点:解析优先,未解析到日期落今天 */
+  /* 与主窗快速添加同一套落点:解析优先,未指明日期=无日期 */
   const p=parseQuick(text);
   const title=p.text||text.trim();
   if(!title)return;
-  tasks.push({id:seq++,title,list:p.list||null,tags:p.tags||[],prio:p.prio||0,
-    due:p.due||TODAY,time:p.time||null,remind:settings.defaultRemind||null,
+  const list=p.list||null;
+  tasks.push({id:seq++,title,list,tags:p.tags||[],prio:p.prio||0,
+    due:p.due||null,time:p.time||null,remind:settings.defaultRemind||null,
     repeat:p.repeat||null,note:'',subs:[],done:false,doneAt:null});
-  render();toast('已添加「'+title+'」');
+  render();toast(`已添加「${esc(title)}」${p.due?'':(list?` · 已入「${esc(listById(list)?.name||'')}」`:' · 在收件箱')}`);
 }
 if(window.__TAURI__?.event?.listen){
   const ballOn=(n,f)=>window.__TAURI__.event.listen(n,f);

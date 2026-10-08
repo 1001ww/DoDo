@@ -279,10 +279,10 @@ ball.addEventListener('pointermove',e=>{
 });
 ball.addEventListener('pointerup',e=>{
   if(!drag)return;
-  const moved=drag.moved;drag=null;
+  const moved=drag.moved,sw=drag.sw;drag=null; // 先取值再清空,否则 drag.sw 必抛 TypeError 且 dock 不执行
   if(moved){
     ball.classList.remove('dragging');
-    side=(ballX+31)<drag.sw/2?'left':'right';
+    side=(ballX+31)<sw/2?'left':'right';
     dock();
   }else{
     openPanel();
