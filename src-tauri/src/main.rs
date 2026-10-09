@@ -96,7 +96,7 @@ fn send_notification(title: String, body: String) -> Result<(), String> {
 /// 默认数据目录:可执行文件同级 data\(数据跟随安装目录,便携式语义)。
 /// 旧版数据在 %APPDATA%\com.dodo.todo,首次启动由前端搬迁。
 #[tauri::command]
-fn default_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+fn default_data_dir(_app: tauri::AppHandle) -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let dir = exe
         .parent()
@@ -147,6 +147,12 @@ fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
         Ok(())
     }
     rec(std::path::Path::new(&from), std::path::Path::new(&to)).map_err(|e| e.to_string())
+}
+
+/// 同卷原子替换(rename 覆盖目标):恢复备份走「拷临时文件 → rename 落正」,中途失败不会把在用库截成半截
+#[tauri::command]
+fn fs_rename(from: String, to: String) -> Result<(), String> {
+    std::fs::rename(&from, &to).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -201,6 +207,12 @@ fn backup_dir_of(base: &std::path::Path, bdir: &Option<String>) -> std::path::Pa
     }
 }
 
+/// 是否为 DoDo 备份文件(dodo-*.db):清理与列表只认这一命名,防误删自选目录中的其他数据库
+fn is_dodo_backup(p: &std::path::Path) -> bool {
+    p.extension().is_some_and(|x| x == "db")
+        && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("dodo-"))
+}
+
 /// 每日自动备份:复制 dodo.db 到备份文件夹(bdir 为空时用数据目录 backups 子目录),文件名带日期,按文件名倒序保留最近 keep 份。
 /// force=true(手动「立即备份」)时同名也覆盖,保证拿到当下时刻的副本;自动备份保持当日仅首份。
 #[tauri::command]
@@ -211,6 +223,10 @@ fn backup_database(
     keep: u32,
     force: Option<bool>,
 ) -> Result<String, String> {
+    // name 来自前端参数,拒绝路径分隔符与上跳,防止借备份写逃逸到任意路径
+    if name.is_empty() || name.contains('\\') || name.contains('/') || name.contains("..") {
+        return Err("invalid backup name".to_string());
+    }
     let base = std::path::Path::new(&dir);
     let src = base.join("dodo.db");
     if !src.exists() {
@@ -226,10 +242,7 @@ fn backup_database(
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok().map(|e| e.path()))
         // 只清理 DoDo 备份命名(dodo-*.db),防止用户自选目录中的其他 .db(含 dodo.db)被当旧备份删除
-        .filter(|p| {
-            p.extension().is_some_and(|x| x == "db")
-                && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("dodo-"))
-        })
+        .filter(|p| is_dodo_backup(p))
         .collect();
     files.sort();
     while files.len() > keep as usize {
@@ -249,10 +262,7 @@ fn list_backups(dir: String, bdir: Option<String>) -> Result<Vec<serde_json::Val
     let mut out: Vec<serde_json::Value> = std::fs::read_dir(&bdir)
         .map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().extension().is_some_and(|x| x == "db")
-                && e.file_name().to_string_lossy().starts_with("dodo-")
-        })
+        .filter(|e| is_dodo_backup(&e.path()))
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let modified = meta
@@ -357,14 +367,14 @@ async fn sqlite_init(path: String, legacy: Option<String>) -> Result<(), String>
                             .await
                             .map_err(|e| e.to_string())?;
                         // 旧库缺补列时先补齐,保证下方显式列序搬迁不因结构差异静默失败
+                        let lcols: Vec<String> = sqlx::query("PRAGMA legacy_db.table_info(tasks)")
+                            .fetch_all(&mut *conn)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .iter()
+                            .filter_map(|r| r.try_get::<String, _>(1).ok())
+                            .collect();
                         for (col, dflt) in [("history", " DEFAULT '[]'"), ("nextDue", "")] {
-                            let lcols: Vec<String> = sqlx::query("PRAGMA legacy_db.table_info(tasks)")
-                                .fetch_all(&mut *conn)
-                                .await
-                                .map_err(|e| e.to_string())?
-                                .iter()
-                                .filter_map(|r| r.try_get::<String, _>(1).ok())
-                                .collect();
                             if !lcols.contains(&col.to_string()) {
                                 sqlx::query(&format!(
                                     "ALTER TABLE legacy_db.tasks ADD COLUMN {col} TEXT{dflt}"
@@ -587,6 +597,7 @@ fn main() {
             fs_exists,
             fs_copy,
             fs_copy_dir,
+            fs_rename,
             make_dir,
             open_folder,
             autostart_status,

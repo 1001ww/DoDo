@@ -1,6 +1,10 @@
 
 /* ================= 桌面端标识(去除浏览器预览外框) ================= */
 if(window.__TAURI__)document.documentElement.classList.add('desktop');
+let APP_VERSION=''; // 版本号单一来源=plugin:app|version(发版只改 tauri.conf 一处);浏览器预览取不到则不显示
+if(window.__TAURI__)window.__TAURI__.core.invoke('plugin:app|version').then(v=>{
+  APP_VERSION=v;const ov=document.getElementById('settingsOverlay');if(ov)buildSettings();
+}).catch(()=>{});
 
 /* ================= 工具 ================= */
 const $=s=>document.querySelector(s);
@@ -1241,7 +1245,7 @@ function openSettings(tab){
     ov=document.createElement('div');ov.id='settingsOverlay';ov.className='overlay';
     ov.innerHTML=`<div class="sdialog">
       <button class="icon-btn sclose" data-sclose title="关闭">${ic('x',15)}</button>
-      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo v0.3.0</div></aside>
+      <aside class="snav"><h2>设置</h2><div id="sNav"></div><div class="snav-foot">DoDo${APP_VERSION?' v'+APP_VERSION:''}</div></aside>
       <div class="scontent" id="sContent"></div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click',settingsClick);
@@ -1282,7 +1286,7 @@ function buildSettings(){
     if(!defaultDataDir&&DB.inv){DB.inv('default_data_dir').then(d=>{defaultDataDir=d;if(settingsTab==='data')buildSettings()}).catch(()=>{})}
     const curDir=settings.dataDir||defaultDataDir;
     refreshBackups();
-    const bkRows=backupsCache?backupsCache.map(b=>{
+    const bkRows=(backupsCache&&backupsCache.length)?backupsCache.map(b=>{
       const armed=restoreArm===b.name;
       const d=b.name.replace(/^dodo-/,'').replace(/\.db$/,'');
       const lbl=/^\d{4}-\d{2}-\d{2}$/.test(d)?d+(d===TODAY?'(今天)':''):b.name;
@@ -1290,7 +1294,7 @@ function buildSettings(){
         <span style="flex:1;min-width:0"><span class="mname" style="display:block">${esc(lbl)}</span>
         <span style="font-size:11px;color:var(--text-3)">${fmtSize(b.size)} · ${b.modified?new Date(b.modified*1000).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}</span></span>
         <button class="sbtn ${armed?'danger':''}" data-bkrestore="${esc(b.name)}">${armed?'确认恢复':'恢复'}</button></div>`}).join('')
-      :`<div class="mrow" style="cursor:default;color:var(--text-3);font-size:12.5px">${backupsCache===null?'加载中…':'暂无备份,点上方「立即备份」创建'}</div>`;
+      :`<div class="mrow" style="cursor:default;color:var(--text-3);font-size:12.5px">${backupsCache?'暂无备份,点上方「立即备份」创建':(window.__TAURI__?'加载中…':'桌面端可用,浏览器预览不展示')}</div>`;
     c.innerHTML=`<h3>数据</h3><div class="sdesc">任务数据保存在本地 SQLite;更改存储位置后自动迁移现有数据</div>
       <div class="srow" style="cursor:default"><div style="min-width:0"><div class="sl">存储位置</div><div class="sd" style="word-break:break-all">${esc(curDir||'获取中…')}${settings.dataDir?'(自定义)':'(默认)'}</div></div></div>
       <div class="srow" style="cursor:default"><div><div class="sl">位置维护</div><div class="sd">可放到网盘目录实现多机备份;不影响导出与示例数据重置</div></div>
@@ -1330,7 +1334,7 @@ function buildSettings(){
   }else{
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
-        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">v0.3.0</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+        <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">${APP_VERSION?'v'+APP_VERSION:''}</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;
@@ -1487,20 +1491,21 @@ async function changeDataDir(){
     await DB.init();
     if(!DB.ready)throw new Error('新位置初始化失败');
     await syncAll();
-    buildSettings();render();
-    toast('数据已迁移到新位置');
+    buildSettings();render();renderSyncBar();
+    toast(syncBlocked?'已切换存储位置,但数据加载失败,改动暂无法保存':'数据已迁移到新位置');
   }catch(e){
     toast('迁移失败,已回退:'+(e.message||e));
     await DB.close();
     settings.dataDir='';saveSettings();
-    await DB.init();await syncAll();buildSettings();
+    await DB.init();await syncAll();buildSettings();renderSyncBar();
   }
 }
 async function resetDataDir(){
   await DB.close();
   settings.dataDir='';saveSettings();
   await DB.init();await syncAll();
-  buildSettings();render();toast('已恢复默认存储位置');
+  buildSettings();render();renderSyncBar();
+  toast(syncBlocked?'已切回默认存储位置,但数据加载失败,改动暂无法保存':'已恢复默认存储位置');
 }
 async function openDataFolder(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
@@ -1516,24 +1521,27 @@ function backupLoc(){
 }
 /* W14 备份管理:列表查看 / 立即备份 / 一键恢复 */
 const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':n+' B';
-let backupsCache=null,restoreArm='',restoreArmTimer=null;
+let backupsCache=null,restoreArm='',restoreArmTimer=null,backupsLoading=false;
 async function refreshBackups(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv)return;
+  if(backupsLoading)return;backupsLoading=true; // 防重入:每次数据页渲染都会调这里
   const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
-  if(!dir)return;
+  if(!dir){backupsLoading=false;return}
   try{
     const list=await inv('list_backups',{dir,bdir:settings.backupDir||null});
     if(JSON.stringify(list)===JSON.stringify(backupsCache))return; // 未变化不重渲染,防循环
     backupsCache=list;
     if(settingsTab==='data')buildSettings();
   }catch(e){console.warn('[DoDo] 备份列表加载失败:',e)}
+  finally{backupsLoading=false}
 }
 async function backupNow(){
   const inv=window.__TAURI__?.core?.invoke;if(!inv){toast('桌面端才能手动备份');return}
   const dir=(settings.dataDir||defaultDataDir||'').replace(/[\\/]+$/,'');
   if(!dir){toast('数据目录获取中,稍后再试');return}
   try{
-    await inv('backup_database',{dir,bdir:settings.backupDir||null,name:`dodo-${TODAY}.db`,keep:7,force:true});
+    const dest=await inv('backup_database',{dir,bdir:settings.backupDir||null,name:`dodo-${TODAY}.db`,keep:7,force:true});
+    if(!dest){toast('数据库文件不存在,备份未创建');return} // Rust 侧空串=没拷到东西,不能当日志记,否则当天自动备份被跳过
     lastBackupDate=TODAY;
     try{await DB.exec("INSERT OR REPLACE INTO meta(key,value) VALUES('lastBackup',?)",[TODAY])}catch(e){}
     await refreshBackups();buildSettings();toast('已创建备份');
@@ -1546,11 +1554,15 @@ async function doRestoreBackup(name){
   const wasReady=DB.ready;
   DB.ready=false;resetSyncState(); // 暂停增量同步,防止恢复瞬间把旧内存状态写回恢复后的库
   try{
-    await inv('fs_copy',{from:loc+sep+name,to:DB.filePath()});
-    await DB.init();await loadAll();reviveRepeats();scheduleSync();
+    const tmp=DB.filePath()+'.restore-tmp'; // 先拷临时文件再同卷 rename 原子替换,中途失败不会截断在用库(G3/B10)
+    await inv('fs_copy',{from:loc+sep+name,to:tmp});
+    await inv('fs_rename',{from:tmp,to:DB.filePath()});
+    await DB.init();
+    if(!DB.ready)throw new Error('恢复后数据库初始化失败'); // DB.init 内部吞错,必须显式核验,否则假成功(G3)
+    await loadAll();reviveRepeats();scheduleSync();
     backupsCache=null;restoreArm='';
-    buildSettings();render();
-    toast(`已恢复 ${name.replace(/^dodo-/,'').replace(/\.db$/,'')} 的备份`);
+    buildSettings();render();renderSyncBar();
+    toast(syncBlocked?'备份已恢复,但数据加载失败,改动暂无法保存':`已恢复 ${name.replace(/^dodo-/,'').replace(/\.db$/,'')} 的备份`);
   }catch(e){
     if(wasReady){try{await DB.init()}catch(_){/* 恢复可用状态 */}}
     restoreArm='';buildSettings();
@@ -1676,12 +1688,26 @@ async function loadAll(){
     if(ls.length)LISTS=ls.map(l=>({id:l.id,name:l.name,color:l.color}));
     for(const m of await DB.select('SELECT * FROM meta')){
       if(m.key==='seq')seq=+m.value||seq;
-      else if(m.key==='extraTags')EXTRA_TAGS=JSON.parse(m.value||'[]');
+      else if(m.key==='extraTags')EXTRA_TAGS=jparse(m.value,[]); // meta 同样容错,损坏不再触发封锁(G1)
       else if(m.key==='lastBackup')lastBackupDate=m.value||'';
     }
     synced=snapshotTasks();syncedLists=JSON.stringify(LISTS);syncedMeta=JSON.stringify([seq,EXTRA_TAGS]);
-    syncBlocked=false;
-  }catch(e){console.warn('[DoDo] 数据加载失败,已暂停写库以防默认值覆盖:',e);syncBlocked=true}
+    syncBlocked=false;renderSyncBar();
+  }catch(e){
+    console.warn('[DoDo] 数据加载失败,已暂停写库以防默认值覆盖:',e);
+    if(!syncBlocked)toast('数据加载失败,改动暂无法保存;可尝试 设置 → 数据 → 恢复示例数据');
+    syncBlocked=true;renderSyncBar();
+  }
+}
+/* syncBlocked 常驻状态条:加载失败后透出,避免"界面正常但改动不保存"的静默丢数据(G1) */
+function renderSyncBar(){
+  let bar=document.getElementById('syncBlockBar');
+  if(!syncBlocked){if(bar)bar.remove();return}
+  if(!bar){
+    bar=document.createElement('div');bar.id='syncBlockBar';
+    bar.textContent='⚠ 数据加载失败,改动暂无法保存——可尝试「设置 → 数据 → 恢复示例数据」或重启应用';
+    document.body.appendChild(bar);
+  }
 }
 const notified=new Set();
 async function sendNotify(title,body){
@@ -1756,6 +1782,7 @@ function ballAdd(text){
     due:p.due||null,time:p.time||null,remind:settings.defaultRemind||null,
     repeat:p.repeat||null,note:'',subs:[],done:false,doneAt:null});
   render();toast(`已添加「${esc(title)}」${p.due?'':(list?` · 已入「${esc(listById(list)?.name||'')}」`:' · 在收件箱')}`);
+  try{window.__TAURI__.event.emit('ball-toast',{m:`已添加「${title}」${p.due?'':(list?' · 已入清单':' · 在收件箱')}`})}catch(e){} // 主窗常隐藏,落点确认回投球窗
 }
 if(window.__TAURI__?.event?.listen){
   const ballOn=(n,f)=>window.__TAURI__.event.listen(n,f);
@@ -1815,6 +1842,6 @@ async function boot(){
   }
 }
 boot();
-function render(){TODAY=iso(new Date());buildSidebar();buildMain();buildDetail();scheduleSync();ballPush()}
+function render(){TODAY=iso(new Date());buildSidebar();buildMain();buildDetail();scheduleSync();ballPush();renderSyncBar()}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){reviveRepeats();render()}});
 

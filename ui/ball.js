@@ -346,6 +346,8 @@ $('#pInput').addEventListener('keydown',e=>{
 let toastTimer=null;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200)}
+/* 主窗 → 球窗单向提示(如速记添加的落点确认) */
+if(EV)EV.listen('ball-toast',e=>{if(e&&e.payload&&e.payload.m)toast(e.payload.m)});
 
 /* ================= 列表交互 ================= */
 $('#pList').addEventListener('click',e=>{
