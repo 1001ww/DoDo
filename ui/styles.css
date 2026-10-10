@@ -2,6 +2,7 @@
 /* ============================= 主题变量 ============================= */
 :root{
   --primary:#5B5BD6; --primary-h:#4C4CC4; --primary-soft:rgba(91,91,214,.10); --ring:0 0 0 3px rgba(91,91,214,.15);
+  --primary-16:rgba(91,91,214,.16); --primary-24:rgba(91,91,214,.24); --primary-halo:rgba(91,91,214,.18);
   --bg:#F4F4F8; --surface:#FFFFFF; --surface-2:#F7F7FA; --surface-3:#F1F1F6;
   --text-1:#21212B; --text-2:#6F6F7C; --text-3:#A4A4B0;
   --border:#E9E9F0; --border-2:#F0F0F5;
@@ -15,6 +16,7 @@
 }
 [data-theme="dark"]{
   --primary:#8484F0; --primary-h:#9797F4; --primary-soft:rgba(132,132,240,.14); --ring:0 0 0 3px rgba(132,132,240,.20);
+  --primary-16:rgba(132,132,240,.20); --primary-24:rgba(132,132,240,.30); --primary-halo:rgba(132,132,240,.22);
   --bg:#16161B; --surface:#1E1E25; --surface-2:#23232B; --surface-3:#2A2A34;
   --text-1:#ECECF1; --text-2:#9A9AA6; --text-3:#60606C;
   --border:#2C2C36; --border-2:#26262F;
@@ -435,30 +437,80 @@ html.desktop .titlebar{user-select:none}
   border-radius:7px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-1);cursor:pointer;transition:all .15s}
 .mc-trigger:hover{border-color:var(--primary);color:var(--primary)}
 
-/* ============================= 统计视图(W13) ============================= */
-.st-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
-.st-card{background:var(--surface);border:1px solid var(--border-2);border-radius:12px;padding:13px 16px}
-.st-num{font-size:24px;font-weight:700;line-height:1.25}
+/* ===== 统计视图(W13,C41 改版):语义指标卡 + 面积趋势 + 环形分布 ===== */
+.st-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+.st-card{position:relative;background:var(--surface);border:1px solid var(--border-2);border-radius:14px;padding:14px 16px;
+  box-shadow:var(--shadow-1);transition:transform .18s,box-shadow .18s,border-color .18s;cursor:pointer}
+.st-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-2);border-color:var(--border)}
+.st-go{position:absolute;top:12px;right:12px;color:var(--text-3);opacity:0;transform:translate(-4px,4px);transition:all .18s}
+.st-card:hover .st-go{opacity:1;transform:none}
+.st-chip{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.st-chip.t2{background:var(--surface-3);color:var(--text-2)}
+.st-chip.tp{background:var(--primary-soft);color:var(--primary)}
+.st-chip.tr{background:var(--red-soft);color:var(--red)}
+.st-chip.tg{background:var(--green-soft);color:var(--green)}
+.st-num{font-size:26px;font-weight:700;line-height:1.3;letter-spacing:-.3px;margin-top:10px;font-variant-numeric:tabular-nums}
 .st-num.is-pri{color:var(--primary)}
 .st-num.is-red{color:var(--red)}
 .st-num.is-green{color:var(--green)}
-.st-label{font-size:12px;color:var(--text-2);margin-top:2px}
-.st-sec{display:flex;align-items:center;justify-content:space-between;margin:22px 2px 8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
-.st-sec b{color:var(--text-1)}
-.st-chart{display:flex;gap:10px;background:var(--surface);border:1px solid var(--border-2);border-radius:12px;padding:12px 18px 10px}
-.st-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
-.st-cnt{font-size:11px;color:var(--text-3);height:14px;line-height:14px}
-.st-track{height:96px;width:100%;max-width:40px;display:flex;align-items:flex-end;justify-content:center}
-.st-bar{display:block;width:22px;min-height:2px;border-radius:6px 6px 2px 2px;background:var(--primary);opacity:.3;transition:height .4s}
-.st-col.today .st-bar{opacity:1}
-.st-day{font-size:11px;color:var(--text-3)}
-.st-col.today .st-day{color:var(--primary);font-weight:600}
-.st-drow{display:flex;align-items:center;gap:12px;padding:5px 2px}
-.st-dname{width:88px;flex:none;font-size:12.5px;color:var(--text-2);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.st-dtrack{flex:1;height:14px;background:var(--surface-2);border-radius:7px;overflow:hidden}
-.st-dtrack i{display:block;height:100%;border-radius:7px;opacity:.85}
-.st-dnum{width:28px;flex:none;font-size:12px;color:var(--text-2)}
-.st-empty{font-size:12.5px;color:var(--text-3);padding:8px 2px}
+.st-label{font-size:12px;color:var(--text-2);margin-top:1px}
+.st-sub{font-size:11px;color:var(--text-3);margin-top:3px;display:flex;align-items:center;gap:5px}
+.st-sub .sd{width:5px;height:5px;border-radius:50%;flex:none}
+.st-panel{background:var(--surface);border:1px solid var(--border-2);border-radius:14px;box-shadow:var(--shadow-1);padding:16px 20px 12px;margin-top:14px}
+.st-panel.dist{padding:12px 20px 16px}
+.st-sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.st-sec-title{font-size:13px;font-weight:600;color:var(--text-1)}
+.st-sec-side{display:flex;align-items:center;gap:8px}
+.st-sec-sum{font-size:11.5px;color:var(--text-3);background:var(--surface-2);border-radius:99px;padding:2px 10px}
+.st-delta{font-size:11.5px;font-weight:600;color:var(--green);background:var(--green-soft);border-radius:99px;padding:2px 10px;display:flex;align-items:center;gap:3px}
+.st-delta.down{color:var(--orange);background:var(--orange-soft)}
+.st-delta.flat{color:var(--text-3);background:var(--surface-2)}
+/* 趋势面积图 */
+.st-chart{position:relative}
+.st-chart svg{display:block;width:100%;height:auto;cursor:crosshair}
+.st-chart .base{stroke:var(--border)}
+.st-chart .avg{stroke:var(--text-3);opacity:.4;stroke-dasharray:2 5}
+.st-chart .avglbl{font-size:10.5px;fill:var(--text-3)}
+.st-chart .aline{fill:none;stroke:var(--primary);stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
+.st-chart .afill{opacity:.9}
+.st-chart .st-pt{transition:r .12s}
+.st-chart .st-pt.hot{r:5.5}
+.st-chart .aval{font-size:11px;fill:var(--text-3)}
+.st-chart .aval.tdy{fill:var(--primary);font-weight:700}
+.st-chart .aday{font-size:11px;fill:var(--text-3)}
+.st-chart .aday.tdy{fill:var(--primary);font-weight:600}
+.st-chart .sguide{stroke:var(--text-3);opacity:0;stroke-dasharray:2 3;transition:opacity .12s;pointer-events:none}
+.st-tip{position:absolute;z-index:5;pointer-events:none;transform:translate(-50%,calc(-100% - 12px));background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-2);padding:3px 10px;font-size:12px;color:var(--text-1);
+  white-space:nowrap;opacity:0;transition:opacity .12s,left .08s,top .08s}
+.st-tip.show{opacity:1}
+.st-tip b{font-weight:700;font-variant-numeric:tabular-nums}
+.st-tip::after{content:"";position:absolute;left:50%;bottom:-4px;width:7px;height:7px;background:var(--surface);
+  border-right:1px solid var(--border);border-bottom:1px solid var(--border);transform:translateX(-50%) rotate(45deg)}
+.st-chart-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:150px;color:var(--text-3);font-size:12.5px}
+.st-chart-empty .ic-wrap{width:34px;height:34px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+.st-chart-empty small{font-size:11px;opacity:.8}
+/* 分布:环形 + 图例(双向联动) */
+.st-dist{display:flex;align-items:center;gap:26px}
+.st-donut{position:relative;width:132px;height:132px;flex:none}
+.st-donut svg{display:block;transform:rotate(-90deg)}
+.st-donut .st-seg{fill:none;stroke-width:14;stroke-linecap:round;cursor:pointer;transition:opacity .15s,stroke-width .15s}
+.st-donut-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.st-donut-c b{font-size:24px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.st-donut-c span{font-size:11px;color:var(--text-3)}
+.st-legend{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0}
+.st-lgrow{display:flex;align-items:center;gap:10px;cursor:pointer;transition:opacity .15s}
+.st-lgrow.dim{opacity:.35}
+.st-lg-dot{width:8px;height:8px;border-radius:3px;flex:none}
+.st-lg-name{width:56px;flex:none;font-size:13px;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-lg-track{flex:1;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.st-lg-track i{display:block;height:100%;border-radius:3px}
+.st-lg-val{width:64px;flex:none;font-size:12px;color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
+.st-lg-val b{color:var(--text-1);font-weight:600}
+.st-empty-msg{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--text-3);font-size:12.5px}
+.st-empty-msg .ic-wrap{width:34px;height:34px;border-radius:50%;background:var(--green-soft);color:var(--green);
+  display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+.st-empty-msg small{font-size:11px;opacity:.8}
 
 /* ============================= 数据加载失败常驻状态条(G1) ============================= */
 #syncBlockBar{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:900;max-width:80vw;

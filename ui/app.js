@@ -64,6 +64,8 @@ const I={
   palette:'<path d="M12 3a9 9 0 1 0 .46 18H14a2 2 0 0 0 1.56-3.25 1.5 1.5 0 0 1 1.18-2.44h2.06A3.7 3.7 0 0 0 22.5 11.6C22.06 6.79 17.4 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.2" cy="7.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.8" cy="7" r="1.2" fill="currentColor" stroke="none"/>',
   db:'<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 15.8v.4"/>',
+  minus:'<path d="M5 12h14"/>',
   grip:'<circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
 };
 const ic=(n,s=16,w=1.8)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
@@ -141,9 +143,9 @@ const SMART=[
   {id:'upcoming',name:'计划',  icon:'cal7'},
   {id:'kanban',  name:'看板',  icon:'kanban'},
   {id:'calendar',name:'日历',  icon:'calendar'},
-  {id:'stats',   name:'统计',  icon:'chart'},
   {id:'all',     name:'全部',  icon:'layers'},
   {id:'completed',name:'已完成',icon:'check'},
+  {id:'stats',   name:'统计',  icon:'chart'},
 ];
 let EXTRA_TAGS=[];
 function tagList(){return[...new Set([...EXTRA_TAGS,...tasks.flatMap(t=>t.tags||[])])]}
@@ -279,6 +281,46 @@ function emptyState(icon,title,sub){
 }
 
 /* ================= 主区渲染 ================= */
+/* 统计视图交互:趋势悬浮提示 + 环形图例双向联动(元素随渲染重建,渲染后直接绑定,不会累积) */
+function bindStInteractions(){
+  const svg=document.getElementById('stChartSvg');
+  if(svg){
+    const tip=document.getElementById('stTip'),guide=document.getElementById('stGuide');
+    const pts=JSON.parse(svg.dataset.pts);
+    const dots=[...svg.querySelectorAll('.st-pt')];
+    let hot=-1;
+    svg.addEventListener('mousemove',e=>{
+      const r=svg.getBoundingClientRect();
+      const vx=(e.clientX-r.left)/r.width*600;
+      let b=0;for(let i=1;i<pts.length;i++)if(Math.abs(pts[i].x-vx)<Math.abs(pts[b].x-vx))b=i;
+      if(b!==hot){if(hot>=0)dots[hot].classList.remove('hot');hot=b;dots[b].classList.add('hot')}
+      guide.setAttribute('x1',pts[b].x);guide.setAttribute('x2',pts[b].x);guide.style.opacity=.45;
+      tip.style.left=Math.min(Math.max(pts[b].x/600*r.width,56),r.width-56)+'px';
+      tip.style.top=pts[b].y/168*r.height+'px';
+      tip.innerHTML=pts[b].l+' · 完成 <b>'+pts[b].v+'</b> 项';
+      tip.classList.add('show');
+    });
+    svg.addEventListener('mouseleave',()=>{
+      if(hot>=0)dots[hot].classList.remove('hot');hot=-1;
+      tip.classList.remove('show');guide.style.opacity=0;
+    });
+  }
+  const box=document.querySelector('.st-dist[data-total]');
+  if(box){
+    const num=document.getElementById('stDcNum'),lbl=document.getElementById('stDcLbl');
+    const segs=[...box.querySelectorAll('.st-seg')],rows=[...box.querySelectorAll('.st-lgrow')];
+    const focus=i=>{
+      segs.forEach((s,j)=>{s.style.opacity=i<0||j===i?1:.25;s.style.strokeWidth=j===i?17:14});
+      rows.forEach((r,j)=>r.classList.toggle('dim',i>=0&&j!==i));
+      if(i>=0){num.textContent=rows[i].dataset.n;lbl.textContent=rows[i].dataset.name+' · '+rows[i].dataset.pct+'%'}
+      else{num.textContent=box.dataset.total;lbl.textContent='未完成'}
+    };
+    [...segs,...rows].forEach(el=>{
+      el.addEventListener('mouseenter',()=>focus(+el.dataset.i));
+      el.addEventListener('mouseleave',()=>focus(-1));
+    });
+  }
+}
 let lastAnimView=null;
 function buildMain(){
   const v=state.view;
@@ -339,40 +381,116 @@ function buildMain(){
         </div>`).join('')}</div></div>`;
     return;
   }
-  /* 统计视图(W13):概览数字 + 近 7 天完成趋势(history/doneAt 并集)+ 未完成清单分布 */
+  /* 统计视图(W13,C41 改版):语义指标卡(可点跳转)+ 近 7 天面积趋势(悬浮提示/日均参考线)+ 未完成环形分布(图例联动) */
   if(v==='stats'){
     const undone=tasks.filter(t=>!t.done).length;
     const todayDue=tasks.filter(t=>!t.done&&t.due===TODAY).length;
-    const overdue=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<0).length;
+    const overdueList=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<0);
+    const overdue=overdueList.length;
     const doneCnt=tasks.filter(t=>t.done).length;
     const doneOn=d=>tasks.filter(t=>(t.history||[]).includes(d)||(t.done&&t.doneAt===d)).length;
     const days=[...Array(7)].map((_,i)=>addDays(i-6));
     const counts=days.map(doneOn);
-    const max=Math.max(1,...counts),weekSum=counts.reduce((a,b)=>a+b,0);
+    const max=Math.max(1,...counts),weekSum=counts.reduce((a,b)=>a+b,0),avg=weekSum/7;
+    const prevSum=[...Array(7)].map((_,i)=>doneOn(addDays(i-13))).reduce((a,b)=>a+b,0);
     const dist=LISTS.map(l=>({name:l.name,color:l.color,n:tasks.filter(t=>!t.done&&t.list===l.id).length}))
       .concat([{name:'收件箱',color:'',n:tasks.filter(t=>!t.done&&!t.list).length}])
       .filter(d=>d.n>0).sort((a,b)=>b.n-a.n);
-    const dmax=Math.max(1,...dist.map(d=>d.n));
-    const card=(num,label,cls)=>`<div class="st-card"><div class="st-num ${cls||''}">${num}</div><div class="st-label">${label}</div></div>`;
+    /* 指标卡背景说明:让每个数字自带语义 */
+    const usedLists=LISTS.filter(l=>tasks.some(t=>!t.done&&t.list===l.id)).length;
+    const usedInbox=tasks.some(t=>!t.done&&!t.list);
+    const undoneSub=!undone?'享受当下吧':usedLists&&usedInbox?`${usedLists} 个清单 + 收件箱`:usedLists?`${usedLists} 个清单`:'收件箱';
+    const hiToday=tasks.filter(t=>!t.done&&t.due===TODAY&&t.prio===3).length;
+    const todaySub=!todayDue?'今天没有到期任务':hiToday?`含 ${hiToday} 项高优先级`:'无高优先级任务';
+    const maxOver=overdue?Math.max(...overdueList.map(t=>-diffDays(TODAY,t.due))):0;
+    const overSub=!overdue?'没有逾期任务':`最久逾期 ${maxOver} 天`;
+    const card=o=>`<div class="st-card" data-nav="${o.nav}" title="${o.title}">
+      <span class="st-go">${ic('chevR',14,2)}</span>
+      <div class="st-chip ${o.chip}">${ic(o.icon,16)}</div>
+      <div class="st-num ${o.cls||''}">${o.n}</div><div class="st-label">${o.label}</div>
+      <div class="st-sub">${o.dot?`<span class="sd" style="background:${o.dot}"></span>`:''}${o.sub}</div></div>`;
+    /* 近 7 天面积图:平滑曲线(Catmull-Rom)+ 日均虚线;整周无完成则出空状态 */
+    const r1=x=>Math.round(x*10)/10;
+    const pts=days.map((d,i)=>({x:r1(10+i*(580/6)),y:r1(128-counts[i]/max*100),v:counts[i],l:d===TODAY?'今天':WD[parseISO(d).getDay()]}));
+    const avgY=r1(128-avg/max*100),avgLy=avgY-7<16?r1(avgY+16):avgY-7;
+    let chart,deltaHtml='';
+    if(!weekSum){
+      chart=`<div class="st-chart-empty"><div class="ic-wrap">${ic('minus',16)}</div>近 7 天还没有完成记录<small>完成任务后,这里会记录你的节奏</small></div>`;
+    }else{
+      let line=`M${pts[0].x},${pts[0].y}`;
+      for(let i=0;i<6;i++){
+        const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+        line+=` C${r1(p1.x+(p2.x-p0.x)/6)},${r1(p1.y+(p2.y-p0.y)/6)} ${r1(p2.x-(p3.x-p1.x)/6)},${r1(p2.y-(p3.y-p1.y)/6)} ${p2.x},${p2.y}`;
+      }
+      const dPct=prevSum?Math.round(Math.abs(weekSum-prevSum)/prevSum*100):0;
+      const delta=!prevSum?'':weekSum===prevSum?`<span class="st-delta flat">与上周持平</span>`
+        :weekSum>prevSum?`<span class="st-delta"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>较上周 +${dPct}%</span>`
+        :`<span class="st-delta down"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>较上周 -${dPct}%</span>`;
+      chart=`<div class="st-chart">
+        <svg id="stChartSvg" viewBox="0 0 600 168" data-pts="${esc(JSON.stringify(pts))}">
+          <defs><linearGradient id="stg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--primary)" stop-opacity=".2"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/>
+          </linearGradient></defs>
+          <line class="avg" x1="10" y1="${avgY}" x2="590" y2="${avgY}"/><text class="avglbl" x="590" y="${avgLy}" text-anchor="end">日均 ${avg.toFixed(1)}</text>
+          <path class="afill" fill="url(#stg)" d="${line} L590,128 L10,128 Z"/>
+          <path class="aline" d="${line}"/>
+          <line class="sguide" id="stGuide" x1="0" y1="16" x2="0" y2="128"/>
+          ${pts[6].v?`<circle cx="${pts[6].x}" cy="${pts[6].y}" r="9" fill="var(--primary-halo)"/>`:''}
+          ${pts.map((p,i)=>`<circle class="st-pt${i===6?' tdy':''}" cx="${p.x}" cy="${p.y}" r="${i===6?4.5:3.5}" fill="var(--surface)" stroke="var(--primary)" stroke-width="${i===6?2.25:2}"/>`).join('')}
+          ${pts.map((p,i)=>`<text class="aval${i===6?' tdy':''}" x="${p.x}" y="${Math.max(14,p.y-14)}" text-anchor="middle">${p.v}</text>`).join('')}
+          <line class="base" x1="10" y1="128" x2="590" y2="128"/>
+          ${pts.map((p,i)=>`<text class="aday${i===6?' tdy':''}" x="${i===6?586:p.x}" y="152" text-anchor="middle">${p.l}</text>`).join('')}
+        </svg>
+        <div class="st-tip" id="stTip"></div></div>`;
+      deltaHtml=delta;
+    }
+    /* 未完成分布:环形(圆头扇区,缝隙自适应)+ 图例;全部完成则出空状态 */
+    const C=2*Math.PI*52;
+    let distHtml;
+    if(!dist.length){
+      distHtml=`<div class="st-dist"><div class="st-donut">
+          <svg viewBox="0 0 132 132" width="132" height="132"><circle cx="66" cy="66" r="52" fill="none" stroke="var(--surface-2)" stroke-width="14"/></svg>
+          <div class="st-donut-c"><b>0</b><span>未完成</span></div></div>
+        <div class="st-empty-msg"><div class="ic-wrap">${ic('check',16,2)}</div>所有任务都完成了<small>添加新任务后,分布会出现在这里</small></div></div>`;
+    }else{
+      const raws=dist.map(d=>d.n/undone*C);
+      const gap=dist.length===1?0:Math.min(16,Math.min(...raws)*0.5);
+      let acc=0,segs='';
+      dist.forEach((d,i)=>{
+        const len=Math.max(.5,r1(raws[i]-gap));
+        segs+=`<circle class="st-seg" data-i="${i}" data-n="${d.n}" data-name="${esc(d.name)}" data-pct="${Math.round(d.n/undone*100)}" cx="66" cy="66" r="52" stroke="${d.color||'var(--text-3)'}" stroke-dasharray="${len} ${r1(C)}" stroke-dashoffset="${r1(-(acc+gap/2))}"/>`;
+        acc+=raws[i];
+      });
+      const rows=dist.map((d,i)=>`<div class="st-lgrow" data-i="${i}">
+        <span class="st-lg-dot" style="background:${d.color||'var(--text-3)'}"></span>
+        <span class="st-lg-name">${esc(d.name)}</span>
+        <div class="st-lg-track"><i style="width:${Math.max(3,Math.round(d.n/undone*100))}%;background:${d.color||'var(--text-3)'}"></i></div>
+        <span class="st-lg-val"><b>${d.n}</b> · ${Math.round(d.n/undone*100)}%</span></div>`).join('');
+      distHtml=`<div class="st-dist" data-total="${undone}">
+        <div class="st-donut"><svg viewBox="0 0 132 132" width="132" height="132">
+          <circle cx="66" cy="66" r="52" fill="none" stroke="var(--surface-2)" stroke-width="14"/>${segs}</svg>
+          <div class="st-donut-c"><b id="stDcNum">${undone}</b><span id="stDcLbl">未完成</span></div></div>
+        <div class="st-legend">${rows}</div></div>`;
+    }
     el.innerHTML=`<div class="${av}">
       <div class="view-head"><div><div class="view-title">统计</div><div class="view-sub">完成趋势与任务分布,数据来自本机完成记录</div></div></div>
       <div class="st-cards">
-        ${card(undone,'待办任务')}${card(todayDue,'今日到期','is-pri')}${card(overdue,'逾期','is-red')}${card(doneCnt,'已完成','is-green')}
+        ${card({nav:'all',title:'查看全部待办',chip:'t2',icon:'list',n:undone,label:'待办任务',sub:undoneSub})}
+        ${card({nav:'today',title:'查看今日任务',chip:'tp',icon:'clock',n:todayDue,cls:todayDue?'is-pri':'',label:'今日到期',sub:todaySub,dot:hiToday?'var(--red)':''})}
+        ${card({nav:'today',title:'查看逾期任务',chip:'tr',icon:'alert',n:overdue,cls:overdue?'is-red':'',label:'逾期',sub:overSub})}
+        ${card({nav:'completed',title:'查看已完成',chip:'tg',icon:'check',n:doneCnt,cls:'is-green',label:'已完成',sub:`今日 +${doneOn(TODAY)}`,dot:'var(--green)'})}
       </div>
-      <div class="st-sec"><span>近 7 天完成</span><b>${weekSum} 项</b></div>
-      <div class="st-chart">${days.map((d,i)=>`
-        <div class="st-col ${d===TODAY?'today':''}">
-          <span class="st-cnt">${counts[i]||''}</span>
-          <div class="st-track"><i class="st-bar" style="height:${Math.round(counts[i]/max*100)}%"></i></div>
-          <span class="st-day">${d===TODAY?'今天':WD[parseISO(d).getDay()]}</span>
-        </div>`).join('')}</div>
-      <div class="st-sec"><span>未完成任务分布</span></div>
-      ${dist.length?dist.map(d=>`
-        <div class="st-drow"><span class="st-dname">${esc(d.name)}</span>
-          <div class="st-dtrack"><i style="width:${Math.max(4,Math.round(d.n/dmax*100))}%;background:${d.color||'var(--text-3)'}"></i></div>
-          <span class="st-dnum">${d.n}</span></div>`).join('')
-        :`<div class="st-empty">没有未完成任务,享受当下吧</div>`}
+      <div class="st-panel">
+        <div class="st-sec-head"><span class="st-sec-title">近 7 天完成</span>
+          <span class="st-sec-side">${weekSum?'<span class="st-sec-sum">合计 '+weekSum+' · 日均 '+avg.toFixed(1)+'</span>'+(deltaHtml||''):''}</span></div>
+        ${chart}
+      </div>
+      <div class="st-panel dist">
+        <div class="st-sec-head" style="margin-bottom:2px"><span class="st-sec-title">未完成任务分布</span><span class="st-sec-sum">共 ${undone} 项</span></div>
+        ${distHtml}
+      </div>
     </div>`;
+    bindStInteractions();
     return;
   }
   /* 全局搜索结果页(W7):标题+备注跨全库匹配,顶栏回车进入;按 清单/收件箱/已完成 分组 */
