@@ -95,11 +95,17 @@ function winSize(w,h){
 async function applyWin(x,y,w,h){return winSet(x,y,w,h)}
 async function dock(){
   const sc=await screenLogical();
-  ballX=side==='left'?-12:sc.w-50;
-  ballY=Math.max(PAD,Math.min(sc.h-BALL-PAD,ballY||sc.h*0.34));
+  if(side==='top'){ /* 顶部吸附:纵向探出 50px,横向停在落点 */
+    ballX=Math.max(PAD,Math.min(sc.w-BALL-PAD,ballX||sc.w*0.5));
+    ballY=-12;
+  }else{
+    ballX=side==='left'?-12:sc.w-50;
+    ballY=Math.max(PAD,Math.min(sc.h-BALL-PAD,ballY||sc.h*0.34));
+  }
   savePos();
   ball.classList.add('docked');
-  ball.style.setProperty('--peekdx',side==='left'?'-20px':'20px');
+  ball.style.setProperty('--peekdx',side==='top'?'0px':(side==='left'?'-20px':'20px'));
+  ball.style.setProperty('--peekdy',side==='top'?'-20px':'0px');
   await applyWin(ballX,ballY,BALL,BALL);
   armPeek();
 }
@@ -273,7 +279,7 @@ ball.addEventListener('pointermove',e=>{
   }
   if(drag.moved){
     ballX=Math.max(-34,Math.min(drag.sw-28,drag.ox+dx));
-    ballY=Math.max(PAD,Math.min(drag.sh-BALL-PAD,drag.oy+dy));
+    ballY=Math.max(-34,Math.min(drag.sh-BALL-PAD,drag.oy+dy)); // 允许拖出上缘:松手按最近边吸附
     WIN.setPosition(new DPI.LogicalPosition(Math.round(ballX),Math.round(ballY)));
   }
 });
@@ -282,7 +288,9 @@ ball.addEventListener('pointerup',e=>{
   const moved=drag.moved,sw=drag.sw;drag=null; // 先取值再清空,否则 drag.sw 必抛 TypeError 且 dock 不执行
   if(moved){
     ball.classList.remove('dragging');
-    side=(ballX+31)<sw/2?'left':'right';
+    /* 三边就近吸附:左 / 右 / 上(底部留给任务栏区,不吸附) */
+    const dl=ballX+31,dt=ballY+31,dr=sw-(ballX+31);
+    side=dt<dl&&dt<dr?'top':(dl<=dr?'left':'right');
     dock();
   }else{
     openPanel();

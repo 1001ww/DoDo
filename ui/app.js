@@ -800,6 +800,12 @@ function parseQuick(raw){
     }
     if(repeat.type==='monthly'&&!repeat.monthDay)repeat.monthDay=due?parseISO(due).getDate():new Date().getDate();
   }
+  /* 只写了时刻未写日期:落最近一次到来——今天该时刻未到落今天,已过顺延明天;重复任务不带此默认,仍由锚定/nextOccur 排期 */
+  if(time&&!due&&!repeat){
+    const n=new Date(),hm=time.split(':').map(Number);
+    const past=n.getHours()*60+n.getMinutes()>hm[0]*60+hm[1];
+    due=addDays(past?1:0);chips.push({k:'date',v:past?'明天':'今天'});
+  }
   return{text,chips,due,time,list,prio,repeat,tags};
 }
 
@@ -831,6 +837,12 @@ function runParseTests(){
   r=parseQuick('周末大扫除');F(r.due===sat,'周末=最近周六');
   r=parseQuick('下午3点半 开会');F(r.time==='15:30'&&r.text==='开会','下午X点半');
   r=parseQuick('买牛奶');F(r.text==='买牛奶'&&!r.due&&!r.time&&!r.prio&&!r.repeat,'纯标题不被改动');
+  /* 仅时刻未写日期=最近一次到来(今天未到落今天,已过顺延明天);重复任务仍走锚定排期 */
+  const tRollover=hm=>{const n=new Date();return n.getHours()*60+n.getMinutes()>hm*60?addDays(1):TODAY};
+  r=parseQuick('14:00 写周报');F(r.due===tRollover(14)&&r.time==='14:00'&&r.text==='写周报','仅时刻未写日期=最近一次到来');
+  r=parseQuick('下午3点半 开会');F(r.due===tRollover(15.5)&&r.time==='15:30','中文时刻未写日期=最近一次到来');
+  r=parseQuick('每天 14:00 喝水');F(r.repeat&&r.repeat.type==='daily'&&r.due===null&&r.time==='14:00','重复任务不套用时刻默认(由 nextOccur 锚定)');
+  r=parseQuick('每周三 14:00 健身');F(r.due===wed&&r.time==='14:00','每周X+时刻=按周几排期不受默认影响');
   /* W9 解析器增强:中文数字时刻 / 英文日期与时刻 / 复杂表达 */
   const monthEnd=(()=>{const n=new Date();return iso(new Date(n.getFullYear(),n.getMonth()+1,0))})();
   const nnWed=(()=>{const n=new Date();let delta=(3-n.getDay()+7)%7||7;return addDays(delta+14)})();
