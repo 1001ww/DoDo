@@ -241,29 +241,32 @@ async function closeToBall(){
 }
 /* 面板头部拖拽:窗口跟随;双击头部复位到球旁 */
 const phead=$('#pHead');
-let pdrag=null;
+let pdrag=null,pdragGen=0; // 世代号:按下+1,松手再+1,作废迟到的异步基准
 phead.addEventListener('pointerdown',e=>{
   if(e.button!==0)return;
-  pdrag={sx:e.screenX,sy:e.screenY};
   phead.setPointerCapture(e.pointerId);phead.classList.add('dragging');
+  const gen=++pdragGen,sx=e.screenX,sy=e.screenY;
+  (async()=>{ // 基准点在按下时取一次:窗口原位(逻辑像素) + 屏幕尺寸;处理器本身保持同步
+    let ox=0,oy=0;
+    try{const f=await WIN.scaleFactor(),r=await WIN.outerPosition();ox=r.x/f;oy=r.y/f}catch(err){}
+    const sc=await screenLogical();
+    if(gen!==pdragGen)return; // 异步期间已松手或又按下:丢弃过期基准
+    pdrag={sx,sy,ox,oy,scw:sc.w,sch:sc.h};
+  })();
 });
-phead.addEventListener('pointermove',async e=>{
+phead.addEventListener('pointermove',e=>{
   if(!pdrag)return;
-  const f=await WIN.scaleFactor();
-  const r=await WIN.outerPosition();
-  const nx=r.x/f+(e.screenX-pdrag.sx)/f,ny=r.y/f+(e.screenY-pdrag.sy)/f;
-  pdrag.sx=e.screenX;pdrag.sy=e.screenY;
-  const sc=await screenLogical();
-  panelPos={x:Math.max(PAD,Math.min(sc.w-PANEL_W-PAD,nx)),y:Math.max(PAD,Math.min(sc.h-260-PAD,ny))};
-  await WIN.setPosition(new DPI.LogicalPosition(Math.round(panelPos.x),Math.round(panelPos.y)));
+  /* screenX/Y 已是逻辑像素(DIP),位移直接用,除 scale 会慢 scale 倍 */
+  const nx=pdrag.ox+(e.screenX-pdrag.sx),ny=pdrag.oy+(e.screenY-pdrag.sy);
+  panelPos={x:Math.max(PAD,Math.min(pdrag.scw-PANEL_W-PAD,nx)),y:Math.max(PAD,Math.min(pdrag.sch-260-PAD,ny))};
+  WIN.setPosition(new DPI.LogicalPosition(Math.round(panelPos.x),Math.round(panelPos.y)));
 });
-const endPdrag=()=>{pdrag=null;phead.classList.remove('dragging')};
+const endPdrag=()=>{pdrag=null;pdragGen++;phead.classList.remove('dragging')};
 phead.addEventListener('pointerup',endPdrag);
 phead.addEventListener('pointercancel',endPdrag);
 phead.addEventListener('dblclick',()=>{panelPos=null;closeToBall().then(openPanel)});
 
 /* ================= 球体:点击 / 拖拽 / 右键 ================= */
-let SCALE=1; // 启动时缓存,指针事件内全同步
 let drag=null;
 ball.addEventListener('pointerdown',e=>{
   if(e.button!==0||mode!=='ball')return;
@@ -272,7 +275,8 @@ ball.addEventListener('pointerdown',e=>{
 });
 ball.addEventListener('pointermove',e=>{
   if(!drag)return;
-  const dx=(e.screenX-drag.sx)/SCALE,dy=(e.screenY-drag.sy)/SCALE;
+  /* screenX/Y 已是逻辑像素(DIP),位移直接用——除 SCALE 会慢 SCALE 倍(高 DPI 下拖拽不跟手的根因) */
+  const dx=e.screenX-drag.sx,dy=e.screenY-drag.sy;
   if(!drag.moved&&Math.hypot(dx,dy)>5){
     drag.moved=true;ball.classList.add('dragging');ball.classList.remove('docked','peek');
     clearTimeout(peekTimer);
@@ -330,6 +334,7 @@ function renderChips(p){
   const chips=[];
   if(p&&p.due)chips.push(`<span class="chip date">${ic('cal',11,2)}${fmtDue(p.due)}</span>`);
   if(p&&p.time)chips.push(`<span class="chip time">${ic('clock',11,2)}${p.time}</span>`);
+  if(p&&p.remind)chips.push(`<span class="chip remind">${ic('bell',11,2)}${p.remind} 提醒</span>`);
   if(p&&p.list)chips.push(`<span class="chip list">${ic('tag',11,2)}${esc(listName(p.list)||p.list)}</span>`);
   if(p&&p.tags)p.tags.forEach(tg=>chips.push(`<span class="chip tag">${ic('tag',11,2)}${esc(tg)}</span>`));
   if(p&&p.prio)chips.push(`<span class="chip prio${p.prio}">${ic('flag',11,2)}${['','低','中','高'][p.prio]}优先级</span>`);
@@ -403,7 +408,6 @@ window.addEventListener('unhandledrejection',e=>reportErr((e.reason&&(e.reason.m
       $('#ballIco').innerHTML='<span class="bnum">–</span>';
       return;
     }
-    try{SCALE=await WIN.scaleFactor()}catch(e){}
     try{const saved=JSON.parse(localStorage.getItem('ball-pos')||'null');
       if(saved){ballX=saved.x;ballY=saved.y;side=saved.side||'right'}}catch(e){}
     await dock();

@@ -708,7 +708,7 @@ function parseQuick(raw){
     if(mm!==undefined){const mn=cnNum(mm);if(mn>=0&&mn<=59)out+=mn+'分'}
     return out;
   });
-  const chips=[];let due=null,time=null,list=null,prio=0,repeat=null;const tags=[];
+  const chips=[];let due=null,time=null,list=null,prio=0,repeat=null,remind=null;const tags=[];
   const take=re=>{const m=text.match(re);if(m){text=text.replace(m[0],' ').trim();return m}return null};
   let m;
   /* 英文时刻:3pm / 10:30am(必须先于数字时刻,否则 3:30pm 会被截成 3:30) */
@@ -792,6 +792,25 @@ function parseQuick(raw){
   else if(m=take(/优先级(高|中|低)/)){prio={高:3,中:2,低:1}[m[1]]}
   else if(m=take(/\bP([123])\b/i)){prio={'1':3,'2':2,'3':1}[m[1].toLowerCase()]}
   if(prio)chips.push({k:'prio',v:{3:'高',2:'中',1:'低'}[prio],p:prio});
+  /* 提醒(C48):时刻+提醒[我] / 准时提醒 / 提前N分钟|小时提醒(按任务时刻换算);无任务时刻则保留原文 */
+  const trimTail=()=>{text=text.replace(m[0],' ').trim().replace(/[\s,，、;；:：.。]+$/,'')};
+  if(!remind&&(m=text.match(/((?:上午|早上|中午|下午|晚上|凌晨)?\s*\d{1,2}(?:[:：点]\d{0,2})?分?半?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*提醒(?:我)?/i))){
+    const am=m[1].match(/上午|早上|中午|下午|晚上|凌晨/)?.[0],half=/半/.test(m[1]);
+    let t=m[1].replace(/[分\s]/g,'').replace(/[：点]/g,':').replace(/半/g,'').replace(/\s*(am|pm)/i,'');
+    if(am)t=t.replace(am,'');
+    let[h2,m2]=t.split(':');h2=+h2;m2=m2?+m2:(half?30:0);
+    if(/pm/i.test(m[1])&&h2<12)h2+=12;
+    if(/am/i.test(m[1])&&h2===12)h2=0;
+    if(h2<24&&m2<60){remind=`${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;chips.push({k:'remind',v:remind});trimTail()}
+  }
+  if(!remind&&time&&(m=text.match(/准时提醒(?:我)?/))){remind=time;chips.push({k:'remind',v:remind});trimTail()}
+  if(!remind&&time&&(m=text.match(/提前\s*(\d{1,3})\s*(分钟|小时)\s*提醒(?:我)?/))){
+    const[h2,m2]=time.split(':').map(Number);
+    const mins=Math.max(0,h2*60+m2-(m[2]==='小时'?+m[1]*60:+m[1]));
+    remind=`${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
+    chips.push({k:'remind',v:remind});trimTail();
+  }
+  if(!remind&&time&&(m=text.match(/(^|[,,，、;；:：\s])提醒(?:我)?(?=[,,，、;；:：\s]|$)/))){remind=time;chips.push({k:'remind',v:remind});trimTail()}
   /* 重复规则缺省补全:每周未选周几→跟随到期日;每月未选几号→跟随到期日/今天 */
   if(repeat){
     if(repeat.type==='weekly'&&(!repeat.weekdays||!repeat.weekdays.length)){
@@ -806,7 +825,7 @@ function parseQuick(raw){
     const past=n.getHours()*60+n.getMinutes()>hm[0]*60+hm[1];
     due=addDays(past?1:0);chips.push({k:'date',v:past?'明天':'今天'});
   }
-  return{text,chips,due,time,list,prio,repeat,tags};
+  return{text,chips,due,time,list,prio,repeat,tags,remind};
 }
 
 /* ================= 解析器自测(浏览器地址加 ?selftest=1 自动运行) ================= */
@@ -848,6 +867,13 @@ function runParseTests(){
   r=parseQuick('#工作!高 写周报');F(r.list==='work'&&r.prio===3&&r.text==='写周报','#清单!高=清单+优先级');
   r=parseQuick('#工作@重要!中 事项');F(r.list==='work'&&r.tags.includes('重要')&&r.prio===2&&r.text==='事项','#清单@标签!中 三连写');
   r=parseQuick('#工作!不存在的优先级');F(r.list==='work'&&r.text==='!不存在的优先级'&&!r.prio,'#清单!非优先级词=!留在标题');
+  /* C48:提醒语法(时刻+提醒 / 提前N / 准时;无任务时刻则保留原文) */
+  r=parseQuick('明天18点工作汇报,16点提醒我');F(r.due===addDays(1)&&r.time==='18:00'&&r.remind==='16:00'&&r.text==='工作汇报','时刻+提醒时刻(用户报告用例)');
+  r=parseQuick('明天 14:00 开会 提前2小时提醒');F(r.time==='14:00'&&r.remind==='12:00'&&r.text==='开会','提前N小时=按任务时刻换算');
+  r=parseQuick('明天下午3点半交方案 提前30分钟提醒');F(r.time==='15:30'&&r.remind==='15:00','提前N分钟(半点时刻)');
+  r=parseQuick('明天9点晨会 准时提醒');F(r.time==='09:00'&&r.remind==='09:00'&&r.text==='晨会','准时提醒');
+  r=parseQuick('提醒我明天9点评审');F(r.due===addDays(1)&&r.time==='09:00'&&r.remind==='09:00'&&r.text==='评审','提醒我+任务=准时提醒');
+  r=parseQuick('明天处理提醒文案');F(!r.remind&&r.text==='处理提醒文案','正文含提醒字样不误解析');
   /* W9 解析器增强:中文数字时刻 / 英文日期与时刻 / 复杂表达 */
   const monthEnd=(()=>{const n=new Date();return iso(new Date(n.getFullYear(),n.getMonth()+1,0))})();
   const nnWed=(()=>{const n=new Date();let delta=(3-n.getDay()+7)%7||7;return addDays(delta+14)})();
@@ -882,6 +908,7 @@ function renderQaChips(){
   const v=$('#qaInput').value.trim();
   $('#qaChips').innerHTML=v?parseQuick(v).chips.map(c=>{
     if(c.k==='date')return`<span class="qa-chip date">${ic('calendar',11)}${esc(c.v)}</span>`;
+    if(c.k==='remind')return`<span class="qa-chip remind">${ic('bell',11)}提醒 ${esc(c.v)}</span>`;
     if(c.k==='list')return`<span class="qa-chip list">${ic('list',11)}${esc(c.v)}</span>`;
     if(c.k==='prio')return`<span class="qa-chip prio ${c.p===2?'p2':c.p===1?'p1':''}">${ic('flag',11)}${esc(c.v)}优先级</span>`;
     return`<span class="qa-chip tag">${ic('tag',11)}${esc(c.v)}</span>`;
@@ -893,7 +920,7 @@ function quickAdd(){
   const p=parseQuick(v);if(!p.text)return;
   let list=p.list,due=p.due;
   if(state.view.startsWith('list:')&&!list)list=state.view.slice(5);
-  tasks.push({id:seq++,title:p.text,list,tags:p.tags,prio:p.prio,due,time:p.time,remind:settings.defaultRemind||null,repeat:p.repeat||null,
+  tasks.push({id:seq++,title:p.text,list,tags:p.tags,prio:p.prio,due,time:p.time,remind:p.remind||settings.defaultRemind||null,repeat:p.repeat||null,
     note:'',subs:[],done:false,doneAt:null});
   inp.value='';renderQaChips();render();
   /* 未指明日期=无日期:提示落点,避免在「今天」等视图里看起来像"添加后消失" */
@@ -1103,6 +1130,7 @@ function toggleHelp(){
     <div class="qh-row"><span class="k">标签</span><span class="v">${tok('t','@重点')}<span class="qhn">@ + 标签名,新名字会自动创建</span></span></div>
     <div class="qh-row"><span class="k">优先级</span><span class="v">${tok('p','!高')}${tok('p','高优先级')}${tok('p1','P1')}<span class="qhn">P1 最高</span></span></div>
     <div class="qh-row"><span class="k">重复</span><span class="v">${tok('d','每天')}${tok('d','每周三')}${tok('d','每月')}</span></div>
+    <div class="qh-row"><span class="k">提醒</span><span class="v">${tok('d','16点提醒我')}${tok('d','提前2小时提醒')}${tok('d','准时提醒')}<span class="qhn">时刻写在「提醒」前;提前N分钟/小时按任务时刻换算</span></span></div>
     <div class="tip">以上全部可省略、可任意组合、顺序不限;写得不规范任务也会正常添加,未识别的字段留空,随时在详情面板补填。</div>`;
   document.body.appendChild(helpEl);
   const r=document.getElementById('qaHelp').getBoundingClientRect();
@@ -1914,7 +1942,7 @@ function ballAdd(text){
   if(!title)return;
   const list=p.list||null;
   tasks.push({id:seq++,title,list,tags:p.tags||[],prio:p.prio||0,
-    due:p.due||null,time:p.time||null,remind:settings.defaultRemind||null,
+    due:p.due||null,time:p.time||null,remind:p.remind||settings.defaultRemind||null,
     repeat:p.repeat||null,note:'',subs:[],done:false,doneAt:null});
   render();toast(`已添加「${esc(title)}」${p.due?'':(list?` · 已入「${esc(listById(list)?.name||'')}」`:' · 在收件箱')}`);
   try{window.__TAURI__.event.emit('ball-toast',{m:`已添加「${title}」${p.due?'':(list?' · 已入清单':' · 在收件箱')}`})}catch(e){} // 主窗常隐藏,落点确认回投球窗
