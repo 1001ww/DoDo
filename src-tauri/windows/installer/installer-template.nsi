@@ -871,35 +871,10 @@ Function un.SkipIfPassive
 FunctionEnd
 
 Function CreateOrUpdateStartMenuShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
-  StrCpy $R0 0
-
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    StrCpy $R0 1
-  ${EndIf}
-
-  !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    StrCpy $R0 1
-  ${EndIf}
-
-  ${If} $R0 = 1
+  ; 始终重建快捷方式,与主流安装器一致:目标 / 悬停描述 / AppUserModelId 每次安装都刷新;
+  ; 仅 /NS(静默安装显式拒绝快捷方式)例外(C46)
+  ${If} $NoShortcutMode = 1
     Return
-  ${EndIf}
-
-  ; Skip creating shortcut if in update mode or no shortcut mode
-  ; but always create if migrating from wix
-  ${If} $WixMode = 0
-    ${If} $UpdateMode = 1
-    ${OrIf} $NoShortcutMode = 1
-      Return
-    ${EndIf}
   ${EndIf}
 
   !if "${STARTMENUFOLDER}" != ""
@@ -913,22 +888,10 @@ Function CreateOrUpdateStartMenuShortcut
 FunctionEnd
 
 Function CreateOrUpdateDesktopShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  ; 始终重建快捷方式,与主流安装器一致:目标 / 悬停描述 / AppUserModelId 每次安装都刷新;
+  ; 仅 /NS(静默安装显式拒绝快捷方式)例外(C46)
+  ${If} $NoShortcutMode = 1
     Return
-  ${EndIf}
-
-  ; Skip creating shortcut if in update mode or no shortcut mode
-  ; but always create if migrating from wix
-  ${If} $WixMode = 0
-    ${If} $UpdateMode = 1
-    ${OrIf} $NoShortcutMode = 1
-      Return
-    ${EndIf}
   ${EndIf}
 
   CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "" "" "" "" "${PRODUCTNAME} 待办应用"

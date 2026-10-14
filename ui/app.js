@@ -783,9 +783,9 @@ function parseQuick(raw){
       due=iso(d);chips.push({k:'date',v:m[0]});
     }
   }
-  /* 清单与标签 */
-  while(m=take(/#(\S+)/)){const g=m[1];const l=LISTS.find(l=>l.name===g||l.name.startsWith(g));if(l){list=l.id;chips.push({k:'list',v:'#'+l.name})}else{tags.push(g);chips.push({k:'tag',v:'#'+g})}}
-  while(m=take(/@(\S+)/)){tags.push(m[1]);chips.push({k:'tag',v:'@'+m[1]})}
+  /* 清单与标签:捕获在 ! @ # 处截断,支持 #清单!高 / #清单@标签 连写,不再整体吞成一个标记(C47) */
+  while(m=take(/#([^#!@\s]+)/)){const g=m[1];const l=LISTS.find(l=>l.name===g||l.name.startsWith(g));if(l){list=l.id;chips.push({k:'list',v:'#'+l.name})}else{tags.push(g);chips.push({k:'tag',v:'#'+g})}}
+  while(m=take(/@([^#!@\s]+)/)){tags.push(m[1]);chips.push({k:'tag',v:'@'+m[1]})}
   /* 优先级:!高 / 高优先级 / 优先级高 / P1-P3 */
   if(m=take(/!(?:优先级)?(高|中|低)(?:优先级)?/)){prio={高:3,中:2,低:1}[m[1]]}
   else if(m=take(/(高|中|低)优先级/)){prio={高:3,中:2,低:1}[m[1]]}
@@ -843,6 +843,11 @@ function runParseTests(){
   r=parseQuick('下午3点半 开会');F(r.due===tRollover(15.5)&&r.time==='15:30','中文时刻未写日期=最近一次到来');
   r=parseQuick('每天 14:00 喝水');F(r.repeat&&r.repeat.type==='daily'&&r.due===null&&r.time==='14:00','重复任务不套用时刻默认(由 nextOccur 锚定)');
   r=parseQuick('每周三 14:00 健身');F(r.due===wed&&r.time==='14:00','每周X+时刻=按周几排期不受默认影响');
+  /* C47:# / @ 标记在 ! @ # 处截断,支持连写不再整体吞成一个标记 */
+  r=parseQuick('#项目管理!高');F(r.tags.includes('项目管理')&&r.prio===3&&r.text==='','#清单!高=标签+优先级(用户报告用例)');
+  r=parseQuick('#工作!高 写周报');F(r.list==='work'&&r.prio===3&&r.text==='写周报','#清单!高=清单+优先级');
+  r=parseQuick('#工作@重要!中 事项');F(r.list==='work'&&r.tags.includes('重要')&&r.prio===2&&r.text==='事项','#清单@标签!中 三连写');
+  r=parseQuick('#工作!不存在的优先级');F(r.list==='work'&&r.text==='!不存在的优先级'&&!r.prio,'#清单!非优先级词=!留在标题');
   /* W9 解析器增强:中文数字时刻 / 英文日期与时刻 / 复杂表达 */
   const monthEnd=(()=>{const n=new Date();return iso(new Date(n.getFullYear(),n.getMonth()+1,0))})();
   const nnWed=(()=>{const n=new Date();let delta=(3-n.getDay()+7)%7||7;return addDays(delta+14)})();
