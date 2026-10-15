@@ -7,7 +7,7 @@
   --text-1:#21212B; --text-2:#6F6F7C; --text-3:#A4A4B0;
   --border:#E9E9F0; --border-2:#F0F0F5;
   --red:#E5484D; --red-soft:rgba(229,72,77,.10);
-  --orange:#F5A524; --blue:#4A9EF5; --green:#30A46C; --green-soft:rgba(48,164,108,.12);
+  --orange:#F5A524; --orange-soft:rgba(245,165,36,.13); --blue:#4A9EF5; --green:#30A46C; --green-soft:rgba(48,164,108,.12);
   --sel:#E9E9F4;
   --shadow-1:0 1px 3px rgba(18,18,28,.06);
   --shadow-2:0 8px 30px rgba(18,18,28,.14);
@@ -21,7 +21,7 @@
   --text-1:#ECECF1; --text-2:#9A9AA6; --text-3:#60606C;
   --border:#2C2C36; --border-2:#26262F;
   --red:#F26D72; --red-soft:rgba(242,109,114,.14);
-  --orange:#F5A524; --blue:#5AA9F7; --green:#3DBA7A; --green-soft:rgba(61,186,122,.16);
+  --orange:#F5A524; --orange-soft:rgba(245,165,36,.16); --blue:#5AA9F7; --green:#3DBA7A; --green-soft:rgba(61,186,122,.16);
   --sel:#2A2A36;
   --shadow-1:0 1px 3px rgba(0,0,0,.35);
   --shadow-2:0 8px 30px rgba(0,0,0,.5);
@@ -183,6 +183,7 @@ input,textarea{font-family:inherit;font-size:inherit;color:inherit;border:none;o
 .qa-chip.prio.p2{background:rgba(245,165,36,.14);color:var(--orange)}
 .qa-chip.prio.p1{background:rgba(74,158,245,.12);color:var(--blue)}
 .qa-chip.tag{background:var(--surface-3);color:var(--text-2)}
+.qa-chip.remind{background:var(--orange-soft);color:var(--orange)}
 .qa-box input{width:100%;font-size:13.5px}
 .qa-box input::placeholder{color:var(--text-3)}
 .qa-hint{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-3);flex:none}

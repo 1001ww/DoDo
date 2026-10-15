@@ -792,7 +792,7 @@ function parseQuick(raw){
   else if(m=take(/优先级(高|中|低)/)){prio={高:3,中:2,低:1}[m[1]]}
   else if(m=take(/\bP([123])\b/i)){prio={'1':3,'2':2,'3':1}[m[1].toLowerCase()]}
   if(prio)chips.push({k:'prio',v:{3:'高',2:'中',1:'低'}[prio],p:prio});
-  /* 提醒(C48):时刻+提醒[我] / 准时提醒 / 提前N分钟|小时提醒(按任务时刻换算);无任务时刻则保留原文 */
+  /* 提醒(C48):时刻+提醒[我] / 准时提醒 / 提前N分钟|小时提醒(支持中文数字与「半」,按任务时刻换算);无任务时刻则保留原文 */
   const trimTail=()=>{text=text.replace(m[0],' ').trim().replace(/[\s,，、;；:：.。]+$/,'')};
   if(!remind&&(m=text.match(/((?:上午|早上|中午|下午|晚上|凌晨)?\s*\d{1,2}(?:[:：点]\d{0,2})?分?半?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*提醒(?:我)?/i))){
     const am=m[1].match(/上午|早上|中午|下午|晚上|凌晨/)?.[0],half=/半/.test(m[1]);
@@ -804,11 +804,14 @@ function parseQuick(raw){
     if(h2<24&&m2<60){remind=`${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;chips.push({k:'remind',v:remind});trimTail()}
   }
   if(!remind&&time&&(m=text.match(/准时提醒(?:我)?/))){remind=time;chips.push({k:'remind',v:remind});trimTail()}
-  if(!remind&&time&&(m=text.match(/提前\s*(\d{1,3})\s*(分钟|小时)\s*提醒(?:我)?/))){
+  if(!remind&&time&&(m=text.match(/提前\s*(半|\d{1,3}|[零一二两三四五六七八九十]{1,3})(?:个)?\s*(分钟|小时)\s*提醒(?:我)?/))){
     const[h2,m2]=time.split(':').map(Number);
-    const mins=Math.max(0,h2*60+m2-(m[2]==='小时'?+m[1]*60:+m[1]));
-    remind=`${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
-    chips.push({k:'remind',v:remind});trimTail();
+    const n=m[1]==='半'?0.5:(/^\d+$/.test(m[1])?+m[1]:cnNum(m[1]));
+    if(Number.isFinite(n)){
+      const mins=Math.max(0,h2*60+m2-Math.round(n*(m[2]==='小时'?60:1)));
+      remind=`${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
+      chips.push({k:'remind',v:remind});trimTail();
+    }
   }
   if(!remind&&time&&(m=text.match(/(^|[,,，、;；:：\s])提醒(?:我)?(?=[,,，、;；:：\s]|$)/))){remind=time;chips.push({k:'remind',v:remind});trimTail()}
   /* 重复规则缺省补全:每周未选周几→跟随到期日;每月未选几号→跟随到期日/今天 */
@@ -871,6 +874,9 @@ function runParseTests(){
   r=parseQuick('明天18点工作汇报,16点提醒我');F(r.due===addDays(1)&&r.time==='18:00'&&r.remind==='16:00'&&r.text==='工作汇报','时刻+提醒时刻(用户报告用例)');
   r=parseQuick('明天 14:00 开会 提前2小时提醒');F(r.time==='14:00'&&r.remind==='12:00'&&r.text==='开会','提前N小时=按任务时刻换算');
   r=parseQuick('明天下午3点半交方案 提前30分钟提醒');F(r.time==='15:30'&&r.remind==='15:00','提前N分钟(半点时刻)');
+  r=parseQuick('明天 14:00 开会 提前两个小时提醒我');F(r.time==='14:00'&&r.remind==='12:00'&&r.text==='开会','提前两小时(中文数字+提醒我)');
+  r=parseQuick('明天下午3点交稿 提前半小时提醒');F(r.time==='15:00'&&r.remind==='14:30'&&r.text==='交稿','提前半小时');
+  r=parseQuick('明天18点 提前两个小时提醒我取快递');F(r.time==='18:00'&&r.remind==='16:00'&&r.text==='取快递','提前N小时提醒我+后置正文');
   r=parseQuick('明天9点晨会 准时提醒');F(r.time==='09:00'&&r.remind==='09:00'&&r.text==='晨会','准时提醒');
   r=parseQuick('提醒我明天9点评审');F(r.due===addDays(1)&&r.time==='09:00'&&r.remind==='09:00'&&r.text==='评审','提醒我+任务=准时提醒');
   r=parseQuick('明天处理提醒文案');F(!r.remind&&r.text==='处理提醒文案','正文含提醒字样不误解析');
@@ -1294,6 +1300,10 @@ document.addEventListener('click',e=>{
   const open=e.target.closest('[data-open]');
   if(open&&!e.target.closest('.checkbox,.row-btn,.kcard-meta'))openDetail(+open.dataset.open);
 });
+/* 拖放兜底:dragDropEnabled 已关(Tauri 原生拖放处理器会吞掉 HTML5 拖拽),
+   文件误拖进窗口时 preventDefault,防止 WebView2 导航打开该文件 */
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>e.preventDefault());
 /* 看板拖拽 */
 document.addEventListener('dragstart',e=>{const c=e.target.closest('.kcard');if(c){e.dataTransfer.setData('text/plain',c.dataset.drag);c.classList.add('dragging')}});
 document.addEventListener('dragend',e=>{const c=e.target.closest('.kcard');c&&c.classList.remove('dragging');document.querySelectorAll('.kcol').forEach(k=>k.classList.remove('drag-over'))});
