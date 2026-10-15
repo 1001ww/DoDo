@@ -30,6 +30,13 @@ function fmtTime(t){
   const ap=h<12?'上午':'下午';h=h%12||12;
   return`${ap} ${h}:${String(m).padStart(2,'0')}`;
 }
+/* 提醒显示:'HH:MM'=锚定到期日当天;含日期('YYYY-MM-DD HH:MM')=绝对提醒(C54),展示为 人话日期+时刻 */
+function fmtRemind(r){
+  if(!r)return r;
+  const sp=r.indexOf(' ');
+  if(sp<0)return fmtTime(r);
+  return`${fmtDue(r.slice(0,sp))} ${fmtTime(r.slice(sp+1))}`;
+}
 const cmp=(a,b)=>{const ad=a.due||'9999-99-99',bd=b.due||'9999-99-99';if(ad!==bd)return ad<bd?-1:1;return(b.prio||0)-(a.prio||0)};
 
 /* ================= 图标 ================= */
@@ -573,9 +580,9 @@ function buildDetail(){
       <div class="d-prop" data-menu="list">${ic('list',15)}<span class="p-label">清单</span>
         <span class="p-val">${l?`<span class="dot" style="background:${l.color}"></span>${esc(l.name)}`:`<span class="ph">收件箱</span>`}${ic('chevR',13)}</span></div>
       <div class="d-prop" data-menu="date">${ic('calendar',15)}<span class="p-label">日期</span>
-        <span class="p-val">${t.due?esc(fmtDue(t.due)):(t.time?`<span class="ph">${fmtTime(t.time)}</span>`:`<span class="ph">设置日期</span>`)}${t.time?`<span class="ph">${fmtTime(t.time)}</span>`:''}${ic('chevR',13)}</span></div>
+        <span class="p-val">${t.due?esc(fmtDue(t.due))+(t.time?`<span class="ph">${fmtTime(t.time)}</span>`:''):(t.time?`<span class="ph">${fmtTime(t.time)}</span>`:`<span class="ph">设置日期</span>`)}${ic('chevR',13)}</span></div>
       <div class="d-prop" data-menu="remind">${ic('bell',15)}<span class="p-label">提醒</span>
-        <span class="p-val">${t.remind?esc(fmtTime(t.remind)):`<span class="ph">不提醒</span>`}${ic('chevR',13)}</span></div>
+        <span class="p-val">${t.remind?esc(fmtRemind(t.remind)):`<span class="ph">不提醒</span>`}${ic('chevR',13)}</span></div>
       <div class="d-prop" data-menu="repeat">${ic('repeat',15)}<span class="p-label">重复</span>
         <span class="p-val">${t.repeat?esc(fmtRepeat(t.repeat)+(t.repeat.endDate?` · 至${t.repeat.endDate.slice(5)}`:'')+(t.done&&t.nextDue?` · 下次${fmtDue(t.nextDue)} 恢复`:'')):`<span class="ph">不重复</span>`}${ic('chevR',13)}</span></div>
       <div class="d-prop" data-menu="prio">${ic('flag',15)}<span class="p-label">优先级</span>
@@ -596,7 +603,7 @@ function fitTitle(el){
 /* ================= 菜单 ================= */
 let menuEl=null;
 function closeMenu(){if(menuEl){menuEl.remove();menuEl=null;document.removeEventListener('mousedown',outside,false)}}
-function outside(e){if(menuEl&&!menuEl.contains(e.target))closeMenu()}
+function outside(e){if(menuEl&&!menuEl.contains(e.target)&&!e.target.closest('.mc-pop'))closeMenu()}
 function openMenu(anchor,html,after,cls){
   closeMenu();
   menuEl=document.createElement('div');menuEl.className='menu'+(cls?' '+cls:'');menuEl.innerHTML=html;
@@ -622,53 +629,45 @@ function propMenu(kind,anchor){
   }else if(kind==='date'){
     openDatePicker(anchor,t);
   }else if(kind==='remind'){
-    const cur=(t.remind||'09:00').split(':');
+    /* 提醒统一为绝对日期时刻 'YYYY-MM-DD HH:MM'(C54),与到期日相互独立:没有到期日也能设提醒。
+       预设=按任务时刻提前N小时换算(需日期+时刻,可跨到前一天);自定义日期无任何前提 */
+    const abs=t.remind&&t.remind.indexOf(' ')>=0;
+    const presetAbs=n=>{
+      const[hh,mm]=(t.time||'00:00').split(':').map(Number);
+      const d=parseISO(t.due);d.setHours(hh,mm-n*60,0,0); // 负数分钟自动回退到前一天
+      return iso(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    };
     const html=`
-      <div class="menu-label" style="padding-left:12px">快速选择</div>
-      ${[['09:00','当天 09:00'],['12:00','当天 12:00'],['21:00','前一天 21:00']].map(([v,l])=>
-        `<div class="menu-item ${t.remind===v?'active':''}" data-tp-preset="${v}">${ic('bell',14.5)}<span>${l}</span><span class="m-check">${ic('checkS',14,2.2)}</span></div>`).join('')}
-      <div class="menu-sep"></div>
-      <div class="ti-row"><span class="lbl">自定义</span>
-        <input class="ti-box" data-ti="h" inputmode="numeric" maxlength="2" value="${cur[0]}">
-        <span class="ti-sep">:</span>
-        <input class="ti-box" data-ti="m" inputmode="numeric" maxlength="2" value="${cur[1]}">
-      </div>
+      <div class="menu-label" style="padding-left:12px">按任务时刻提前</div>
+      ${[[2,'提前2小时'],[4,'提前4小时'],[6,'提前6小时']].map(([n,l])=>{
+        const v=t.due?presetAbs(n):null,dis=!t.due||!t.time;
+        return`<div class="menu-item ${t.remind&&t.remind===v?'active':''} ${dis?'dis':''}" data-tp-preset="${n}" ${dis?'data-tpdis="1"':''}>${ic('bell',14.5)}<span>${l}</span><span class="m-check">${ic('checkS',14,2.2)}</span></div>`}).join('')}
+      <div class="menu-item" data-tpcustom>${ic('calendar',14.5)}<span>自定义日期…</span></div>
       <div class="menu-sep"></div>
       <div class="menu-item" data-mi="__clear">${ic('x',14.5)}<span>不提醒</span></div>`;
     openMenu(anchor,html,m=>{
-      const boxes={h:m.querySelector('[data-ti="h"]'),m:m.querySelector('[data-ti="m"]')};
-      const commit=()=>{
-        if(boxes.h.value===''||boxes.m.value==='')return;
-        const h=Math.min(+boxes.h.value,23),mn=Math.min(+boxes.m.value,59);
-        t.remind=String(h).padStart(2,'0')+':'+String(mn).padStart(2,'0');
-        /* 原地更新提醒行,不重建界面 */
+      const patchRow=()=>{
         const cell=document.querySelector('.d-prop[data-menu="remind"] .p-val');
-        if(cell)cell.innerHTML=`${esc(fmtTime(t.remind))}${ic('chevR',13)}`;
-        m.querySelectorAll('[data-tp-preset]').forEach(b=>b.classList.toggle('active',b.dataset.tpPreset===t.remind));
+        if(cell)cell.innerHTML=`${esc(fmtRemind(t.remind))}${ic('chevR',13)}`;
       };
-      Object.entries(boxes).forEach(([unit,el])=>{
-        el.addEventListener('input',()=>{
-          el.value=el.value.replace(/\D/g,'').slice(0,2);
-          if(el.value.length===2){
-            el.value=Math.min(+el.value,unit==='h'?23:59);
-            commit();
-            const next=boxes[unit==='h'?'m':'h'];next.focus();next.select();
-          }
-        });
-        el.addEventListener('blur',()=>{
-          if(el.value!=='')el.value=String(Math.min(+el.value||0,unit==='h'?23:59)).padStart(2,'0');
-        });
-        el.addEventListener('keydown',e=>{if(e.key==='Enter'){el.blur();commit()}});
-      });
+      const deactPresets=()=>m.querySelectorAll('[data-tp-preset]').forEach(b=>b.classList.toggle('active',!b.dataset.tpdis&&!!t.remind&&t.remind===presetAbs(+b.dataset.tpPreset)));
       m.addEventListener('click',e=>{
         const p=e.target.closest('[data-tp-preset]');
-        if(p){const[vh,vm]=p.dataset.tpPreset.split(':');
-          t.remind=p.dataset.tpPreset;boxes.h.value=vh;boxes.m.value=vm;
-          const cell=document.querySelector('.d-prop[data-menu="remind"] .p-val');
-          if(cell)cell.innerHTML=`${esc(fmtTime(t.remind))}${ic('chevR',13)}`;
-          m.querySelectorAll('[data-tp-preset]').forEach(b=>b.classList.toggle('active',b===p));return}
+        if(p){
+          if(p.dataset.tpdis){toast('任务没有时刻,无法按时点提前;可用「自定义日期」自选');return}
+          t.remind=presetAbs(+p.dataset.tpPreset);
+          /* 原地更新提醒行,不重建界面;原地路径必须显式 scheduleSync(不经 render,否则不落库) */
+          patchRow();
+          deactPresets();scheduleSync();return}
+        const tc=e.target.closest('[data-tpcustom]');
+        if(tc){
+          openMcPop(tc,abs?t.remind.slice(0,10):(t.due||TODAY),(iso,tv)=>{ // tv=弹层时刻输入(null=留空,回落任务时刻,再回落 09:00)
+            t.remind=iso+' '+(tv||t.time||'09:00');
+            patchRow();deactPresets();scheduleSync();
+          },{time:abs?t.remind.slice(11):(t.time||'09:00')});
+          return}
         const mi=e.target.closest('[data-mi]');
-        if(mi&&mi.dataset.mi==='__clear'){t.remind=null;closeMenu();buildDetail()}
+        if(mi&&mi.dataset.mi==='__clear'){t.remind=null;closeMenu();buildDetail();scheduleSync()}
       });
     },'time-menu');
   }else if(kind==='repeat'){
@@ -939,26 +938,60 @@ function closeMcPop(){
   if(mcPop){mcPop.remove();mcPop=null;mcOnPick=null;document.removeEventListener('mousedown',mcOutside,false)}
 }
 function mcOutside(e){if(mcPop&&!mcPop.contains(e.target))closeMcPop()}
-function openMcPop(anchor,selISO,onPick){
+function openMcPop(anchor,selISO,onPick,opts){
   closeMcPop();
+  opts=opts||{};
   mcOnPick=onPick;
   mcM=selISO?parseISO(selISO):new Date(new Date().getFullYear(),new Date().getMonth(),1);
   mcPop=document.createElement('div');mcPop.className='menu mc-pop';
-  mcPop.innerHTML=mcHTML(mcM.getFullYear(),mcM.getMonth(),selISO||'','data-mcdate');
+  mcPop.innerHTML=mcHTML(mcM.getFullYear(),mcM.getMonth(),selISO||'','data-mcdate',opts);
   document.body.appendChild(mcPop);
   const r=anchor.getBoundingClientRect(),w=mcPop.offsetWidth,h=mcPop.offsetHeight;
   let x=Math.min(r.left,innerWidth-w-10),y=r.bottom+6;
   if(y+h>innerHeight-10)y=Math.max(10,r.top-h-6);
   mcPop.style.left=x+'px';mcPop.style.top=y+'px';
   document.addEventListener('mousedown',mcOutside,false);
+  /* 时刻行(C53,仅日期场景传 onTime):与提醒菜单同款双输入,实时钳位进位,留空=清除时刻 */
+  const timeVal=()=>{
+    const bh=mcPop.querySelector('[data-mcti="h"]'),bm=mcPop.querySelector('[data-mcti="m"]');
+    if(!bh||!bm)return undefined;
+    return(bh.value===''&&bm.value==='')?null:String(Math.min(+bh.value||0,23)).padStart(2,'0')+':'+String(Math.min(+bm.value||0,59)).padStart(2,'0');
+  };
+  const wireTime=()=>{
+    const bh=mcPop.querySelector('[data-mcti="h"]'),bm=mcPop.querySelector('[data-mcti="m"]');
+    if(!opts.onTime||!bh||!bm)return;
+    [bh,bm].forEach((el,idx)=>{
+      el.addEventListener('input',()=>{
+        el.value=el.value.replace(/\D/g,'').slice(0,2);
+        if(el.value.length===2){
+          el.value=Math.min(+el.value,idx===0?23:59);
+          const nx=idx===0?bm:bh;nx.focus();nx.select();
+        }
+        opts.onTime(timeVal());
+      });
+      el.addEventListener('blur',()=>{
+        if(el.value!==''){el.value=String(Math.min(+el.value||0,idx===0?23:59)).padStart(2,'0');opts.onTime(timeVal())}
+      });
+      el.addEventListener('keydown',e=>{if(e.key==='Enter')el.blur()});
+    });
+  };
+  wireTime();
   mcPop.addEventListener('click',e=>{
     const nav=e.target.closest('[data-mcnav]');
-    if(nav){mcM.setMonth(mcM.getMonth()+ +nav.dataset.mcnav);mcPop.innerHTML=mcHTML(mcM.getFullYear(),mcM.getMonth(),selISO||'','data-mcdate');return}
+    if(nav){
+      mcM.setMonth(mcM.getMonth()+ +nav.dataset.mcnav);
+      const keepT=opts.onTime?{time:timeVal()===undefined?opts.time:timeVal()}:opts; // 翻月保留已输入的时刻
+      mcPop.innerHTML=mcHTML(mcM.getFullYear(),mcM.getMonth(),selISO||'','data-mcdate',keepT);
+      if(opts.onTime)wireTime();
+      return}
+    if(opts.onTime&&e.target.closest('[data-mctclear]')){
+      const bh=mcPop.querySelector('[data-mcti="h"]'),bm=mcPop.querySelector('[data-mcti="m"]');
+      bh.value='';bm.value='';opts.onTime(null);bh.focus();return}
     const d=e.target.closest('[data-mcdate]');
-    if(d){const fn=mcOnPick;closeMcPop();fn&&fn(d.dataset.mcdate)}
+    if(d){const fn=mcOnPick,tv=opts.time!==undefined?timeVal():undefined;closeMcPop();fn&&fn(d.dataset.mcdate,tv)}
   });
 }
-function mcHTML(y,m,selISO,attr){
+function mcHTML(y,m,selISO,attr,opts){
   const ws=settings.weekStart==='sun'?0:1;
   const off=((new Date(y,m,1).getDay()-ws)+7)%7,dimN=new Date(y,m+1,0).getDate(),dimP=new Date(y,m,0).getDate();
   const hd=(ws===1?['一','二','三','四','五','六','日']:['日','一','二','三','四','五','六']);
@@ -971,12 +1004,17 @@ function mcHTML(y,m,selISO,attr){
     const cls=['mc-cell',dm?'dim':'',diso===selISO?'sel':'',diso===TODAY?'today':''].join(' ');
     cells+=`<div class="${cls}" ${attr}="${diso}">${num}</div>`;
   }
+  const ti=opts&&opts.time!==undefined?`<div class="menu-sep"></div>
+    <div class="ti-row mc-ti"><span class="lbl">时刻</span>
+      <input class="ti-box" data-mcti="h" inputmode="numeric" maxlength="2" placeholder="时" value="${opts.time?opts.time.split(':')[0]:''}">
+      <span class="ti-sep">:</span>
+      <input class="ti-box" data-mcti="m" inputmode="numeric" maxlength="2" placeholder="分" value="${opts.time?opts.time.split(':')[1]:''}">${opts.onTime?`<button type="button" class="ti-clear" data-mctclear title="清除时刻">${ic('x',13)}</button>`:''}</div>`:'';
   return`<div class="mc-nav">
       <button type="button" data-mcnav="-1">${ic('chevL',14)}</button>
       <span class="ym">${y} 年 ${m+1} 月</span>
       <button type="button" data-mcnav="1">${ic('chevR',14)}</button></div>
     <div class="mc-week">${hd.map(d=>`<span>${d}</span>`).join('')}</div>
-    <div class="mc-grid">${cells}</div>`;
+    <div class="mc-grid">${cells}</div>${ti}`;
 }
 
 /* ================= 日期选择器(详情面板·日期) ================= */
@@ -989,7 +1027,7 @@ function closeDP(){
 function dpOutside(e){if(dpEl&&!dpEl.contains(e.target)&&!e.target.closest('.mc-pop')&&!e.target.closest('[data-menu="date"]'))closeDP()}
 function patchDateRow(t){
   const cell=document.querySelector('.d-prop[data-menu="date"] .p-val');
-  if(cell)cell.innerHTML=`${t.due?esc(fmtDue(t.due)):(t.time?fmtTime(t.time):'<span class="ph">设置日期</span>')}${t.time?`<span class="ph">${fmtTime(t.time)}</span>`:''}${ic('chevR',13)}`;
+  if(cell)cell.innerHTML=`${t.due?esc(fmtDue(t.due))+(t.time?`<span class="ph">${fmtTime(t.time)}</span>`:''):(t.time?`<span class="ph">${fmtTime(t.time)}</span>`:'<span class="ph">设置日期</span>')}${ic('chevR',13)}`;
 }
 function openDatePicker(anchor,t){
   if(dpEl&&dpTask===t){closeDP();return}
@@ -1008,7 +1046,9 @@ function openDatePicker(anchor,t){
     if(e.target.closest('[data-dpcustom]')){
       openMcPop(e.target.closest('[data-dpcustom]'),dpTask.due||TODAY,iso=>{
         dpTask.due=iso;patchDateRow(dpTask);scheduleSync();dpEl.innerHTML=dpHTML(dpTask);buildMain();buildSidebar();
-      });
+      },{time:dpTask.time,onTime:tm=>{ // C53:自定义日期弹层内直接改时刻,原位刷新日期行
+        dpTask.time=tm;patchDateRow(dpTask);scheduleSync();buildMain();
+      }});
       return}
     if(e.target.closest('[data-dclear]')){dpTask.due=null;dpTask.time=null;closeDP();render()}
   });
@@ -1899,7 +1939,16 @@ function startReminders(){
     const now=new Date(),cur=iso(now);
     const hhmm=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
     for(const t of tasks){
-      if(t.done||!t.due||!t.remind)continue;
+      if(t.done||!t.remind)continue;
+      const sp=t.remind.indexOf(' ');
+      if(sp>0){ // 绝对日期时刻提醒(C54):不依赖 due,到点即通知
+        const rd=t.remind.slice(0,sp),rt=t.remind.slice(sp+1),key=t.id+':'+t.remind;
+        if(rd<cur||(rd===cur&&rt<=hhmm)){
+          if(!notified.has(key)){notified.add(key);sendNotify('DoDo · '+fmtDue(rd),t.title+(t.time?' ('+fmtTime(t.time)+')':''))}
+        }
+        continue;
+      }
+      if(!t.due)continue;
       const key=t.id+':'+t.due+':'+t.remind;
       if(t.due<cur||(t.due===cur&&t.remind<=hhmm)){
         if(!notified.has(key)){notified.add(key);sendNotify('DoDo · '+fmtDue(t.due),t.title+(t.time?' ('+fmtTime(t.time)+')':''))}
