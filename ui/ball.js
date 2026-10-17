@@ -3,38 +3,6 @@
    ← ball-state(状态快照) / ball-parsed(解析结果)
    → ball-ready / ball-toggle / ball-add / ball-del / ball-tomorrow
      ball-parse / ball-open-main / ball-open-settings / ball-hide      */
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const parseISO=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
-const addDays=(n,base)=>{const x=base?parseISO(base):new Date();x.setDate(x.getDate()+n);return iso(x)};
-const WD=['周日','周一','周二','周三','周四','周五','周六'];
-const diffDays=(a,b)=>Math.round((parseISO(b)-parseISO(a))/864e5);
-function fmtDue(d){if(!S)return d;const t=S.today,df=diffDays(t,d),x=parseISO(d);
-  if(df===0)return'今天';if(df===1)return'明天';if(df===-1)return'昨天';
-  if(df<0)return`逾期${-df}天`;if(df<7)return WD[x.getDay()];
-  return`${x.getMonth()+1}月${x.getDate()}日`}
-
-/* ================= 图标 ================= */
-const I={
-  cal:'<rect x="3" y="4.5" width="18" height="17" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/>',
-  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
-  repeat:'<path d="m17 2.5 4 4-4 4"/><path d="M3 11.5v-1a4 4 0 0 1 4-4h14"/><path d="m7 21.5-4-4 4-4"/><path d="M21 12.5v1a4 4 0 0 1-4 4H3"/>',
-  flag:'<path d="M5 21V4.5"/><path d="M5 4.5c4-2.6 7 2.2 12-.3V13c-5 2.5-8-2.3-12 .3"/>',
-  tag:'<path d="M3.5 5.5v6l8.8 8.8a2 2 0 0 0 2.8 0l5-5a2 2 0 0 0 0-2.8L11.5 3.5h-6a2 2 0 0 0-2 2Z"/><circle cx="8" cy="8" r="1.2"/>',
-  chevD:'<path d="m6 9.5 6 6 6-6"/>',
-  plus:'<path d="M12 5v14M5 12h14"/>',
-  sun:'<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19"/>',
-  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
-  home:'<path d="m3.5 10.5 8.5-7 8.5 7"/><path d="M5.5 9v11h13V9"/>',
-  gear:'<circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.35.95A7 7 0 0 0 14 5.1L13.6 2.6h-4L9.2 5.1a7 7 0 0 0-2.5 1.44l-2.36-.95-2 3.46 2 1.55a7 7 0 0 0 0 2.8l-2 1.55 2 3.46 2.35-.95a7 7 0 0 0 2.51 1.44l.4 2.5h4l.4-2.5a7 7 0 0 0 2.5-1.44l2.36.95 2-3.46-2-1.55c.1-.46.14-.93.14-1.4Z"/>',
-  eyeOff:'<path d="M4 4l16 16"/><path d="M10.6 5.9A9.8 9.8 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17.4 17.4 0 0 1-3.2 3.9M6.1 6.9A16.9 16.9 0 0 0 2.5 12S6 18.5 12 18.5a9.4 9.4 0 0 0 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
-  trash:'<path d="M4 7h16"/><path d="M9.5 3.5h5a1 1 0 0 1 1 1V7h-7V4.5a1 1 0 0 1 1-1Z"/><path d="M6.5 7 7.3 20a1.5 1.5 0 0 0 1.5 1.4h6.4A1.5 1.5 0 0 0 16.7 20l.8-13"/>',
-  check:'<path d="m5 12.5 4.5 4.5L19 7"/>',
-};
-const ic=(n,s=16,w=1.8)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
-$('#pPlus').innerHTML=ic('plus',14,2);
-
 /* ================= 完成表情 ================= */
 const spark=(cx,cy,s)=>`<path d="M${cx} ${cy-s}L${cx+s*.3} ${cy-s*.3}L${cx+s} ${cy}L${cx+s*.3} ${cy+s*.3}L${cx} ${cy+s}L${cx-s*.3} ${cy+s*.3}L${cx-s} ${cy}L${cx-s*.3} ${cy-s*.3}Z" fill="#fff"/>`;
 const FACES=[
@@ -125,7 +93,7 @@ function tryShow(){
   dock(); // 重新落位并强制一次位置/尺寸写入,规避透明窗隐藏后不重绘
 }
 function applyState(s){
-  S=s;
+  S=s;if(s.today)TODAY=s.today;
   document.documentElement.dataset.theme=s.theme||'light';
   if(s.visible===false){shown=false;try{WIN.hide()}catch(e){}} // 重置闩锁:下次开启可再次显示
   else tryShow();
@@ -164,7 +132,7 @@ function renderList(anim){
       stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}" transform="rotate(-90 15 15)" style="transition:stroke-dashoffset .4s ease"/>
     </svg><span class="ring-num">${tDone}/${tTotal}</span>`;
   if(!p.length&&!d.length){
-    box.innerHTML=`<div class="alldone"><div class="big">${ic('check',22,2.4)}</div>
+    box.innerHTML=`<div class="alldone"><div class="big">${ic('checkS',22,2.4)}</div>
       <div class="t1">今天暂无待办</div><div class="t2">从上方输入框快速记一条吧</div></div>`;
     updateBall();fitWindow();return;
   }
@@ -175,20 +143,20 @@ function renderList(anim){
     return`<div class="trow" data-id="${t.id}">
       <span class="checkbox" data-check="${t.id}"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.6 9 10 3"/></svg></span>
       <span class="tmain"><span class="ldot" style="background:${lc}"></span><span class="tt2" title="${esc(t.t)}">${esc(t.t)}</span></span>
-      <span class="tmeta">${t.time?`<span>${t.time}</span>`:''}${t.rep?`<span class="rep">${ic('repeat',11,2)}${t.rep}</span>`:''}${t.subs?`<span>${t.subs}</span>`:''}${t.due<S.today?`<span class="over">${fmtDue(t.due)}</span>`:''}${t.prio?`<span class="flag${t.prio}">${ic('flag',12,2)}</span>`:''}</span>
+      <span class="tmeta">${t.time?`<span>${esc(t.time)}</span>`:''}${t.rep?`<span class="rep">${ic('repeat',11,2)}${esc(t.rep)}</span>`:''}${t.subs?`<span>${esc(t.subs)}</span>`:''}${t.due<S.today?`<span class="over">${esc(fmtDue(t.due))}</span>`:''}${t.prio?`<span class="flag${t.prio}">${ic('flag',12,2)}</span>`:''}</span>
       <span class="acts">${t.due<S.today?`<button class="row-btn" data-tom="${t.id}" title="移到明天">${ic('arrow',13)}</button>`:''}<button class="row-btn del" data-del="${t.id}" title="删除">${ic('trash',13)}</button></span>
     </div>`};
-  if(over.length)html+=`<div class="grp over">${ic('cal',12,2.2)}逾期<span class="cnt">${over.length}</span></div>`+over.map(row).join('');
+  if(over.length)html+=`<div class="grp over">${ic('calendar',12,2.2)}逾期<span class="cnt">${over.length}</span></div>`+over.map(row).join('');
   if(today.length)html+=`<div class="grp">${ic('sun',12,2.2)}今天<span class="cnt">${today.length}</span></div>`+today.map(row).join('');
   if(d.length){
-    html+=`<div class="done-head ${doneOpen?'':'closed'}" data-donehead>${ic('check',12,2.4)}已完成<span class="cnt">${d.length}</span><span class="arr">${ic('chevD',12,2.2)}</span></div>`;
+    html+=`<div class="done-head ${doneOpen?'':'closed'}" data-donehead>${ic('checkS',12,2.4)}已完成<span class="cnt">${d.length}</span><span class="arr">${ic('chevD',12,2.2)}</span></div>`;
     if(doneOpen)html+=d.map(t=>`<div class="donerow" data-id="${t.id}">
       <span class="checkbox checked" data-check="${t.id}"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.6 9 10 3"/></svg></span>
       <span class="tmain"><span class="tt2" title="${esc(t.t)}">${esc(t.t)}</span></span>
       <span class="when">${t.due<S.today?'逾期已办':'今天'}</span></div>`).join('');
   }
   if(!p.length&&d.length){
-    html=`<div class="alldone"><div class="big">${ic('check',22,2.4)}</div>
+    html=`<div class="alldone"><div class="big">${ic('checkS',22,2.4)}</div>
       <div class="t1">今天全部完成 🎉</div><div class="t2">共 ${d.length} 项 · 休息一下吧</div></div>`+html;
   }
   box.innerHTML=html;
@@ -220,11 +188,10 @@ async function openPanel(){
       px=Math.max(PAD,Math.min(sc.w-PANEL_W-PAD,px));
       py=Math.min(Math.max(PAD,cy-64),sc.h-h-PAD);
     }
-    document.body.classList.add('expanded');
     ball.style.display='none';
     await applyWin(px,py,PANEL_W,h);
     if(mode!=='panel'){ /* 展开期间被失焦/Esc 收起:撤销展开,回到球态 */
-      panel.classList.remove('open');document.body.classList.remove('expanded');ball.style.display='';
+      panel.classList.remove('open');ball.style.display='';
       await dock();return;
     }
     panel.style.transformOrigin=`${Math.max(20,Math.min(356,cx-px))}px ${Math.max(20,Math.min(h-20,cy-py))}px`;
@@ -235,7 +202,7 @@ async function openPanel(){
 }
 async function closeToBall(){
   mode='ball';panel.classList.remove('open');hideMenu();
-  document.body.classList.remove('expanded');ball.style.display='';
+  ball.style.display='';
   await dock();
   try{await WIN.show()}catch(e){} // 兜底:任何路径收起后球必须可见
 }
@@ -332,9 +299,9 @@ function renderChips(p){
   if(!v.trim()){box.innerHTML='';box.classList.remove('has');return}
   box.classList.add('has');
   const chips=[];
-  if(p&&p.due)chips.push(`<span class="chip date">${ic('cal',11,2)}${fmtDue(p.due)}</span>`);
+  if(p&&p.due)chips.push(`<span class="chip date">${ic('calendar',11,2)}${fmtDue(p.due)}</span>`);
   if(p&&p.time)chips.push(`<span class="chip time">${ic('clock',11,2)}${p.time}</span>`);
-  if(p&&p.remind)chips.push(`<span class="chip remind">${ic('bell',11,2)}${p.remind} 提醒</span>`);
+  if(p&&p.remind){const i=p.remind.indexOf(' ');chips.push(`<span class="chip remind">${ic('bell',11,2)}${esc(i<0?p.remind:p.remind.slice(5,10).replace('-','/')+' '+p.remind.slice(11))} 提醒</span>`)}
   if(p&&p.list)chips.push(`<span class="chip list">${ic('tag',11,2)}${esc(listName(p.list)||p.list)}</span>`);
   if(p&&p.tags)p.tags.forEach(tg=>chips.push(`<span class="chip tag">${ic('tag',11,2)}${esc(tg)}</span>`));
   if(p&&p.prio)chips.push(`<span class="chip prio${p.prio}">${ic('flag',11,2)}${['','低','中','高'][p.prio]}优先级</span>`);

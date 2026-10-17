@@ -1,7 +1,6 @@
 {
   "name": "dodo",
   "private": true,
-  "version": "0.3.7",
   "description": "DoDo · Windows 桌面待办应用",
   "scripts": {
     "tauri": "tauri",
@@ -10,5 +9,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

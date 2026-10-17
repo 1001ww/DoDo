@@ -27,6 +27,7 @@
   --glass:rgba(30,30,37,.55); --glass-brd:rgba(255,255,255,.08);
 }
 *{margin:0;padding:0;box-sizing:border-box}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent}
 body{font-family:"Noto Sans SC","Microsoft YaHei UI","PingFang SC","Segoe UI",system-ui,sans-serif;
   font-size:14px;line-height:1.6;color:var(--text-1);-webkit-font-smoothing:antialiased;user-select:none}
@@ -156,7 +157,7 @@ input{font-family:inherit;font-size:inherit;color:inherit;border:none;outline:no
 .toast{position:absolute;left:50%;bottom:12px;transform:translateX(-50%) translateY(8px);z-index:80;
   display:flex;align-items:center;gap:10px;background:rgba(33,33,43,.92);color:#fff;
   font-size:13px;padding:9px 16px;border-radius:99px;box-shadow:0 10px 34px rgba(0,0,0,.3);
-  opacity:0;pointer-events:none;transition:all .25s ease;max-width:92vw;white-space:nowrap}
+  opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;max-width:92vw;white-space:normal;word-break:break-word}
 [data-theme="dark"] .toast{background:rgba(70,70,84,.96)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
@@ -185,8 +186,9 @@ input{font-family:inherit;font-size:inherit;color:inherit;border:none;outline:no
   <div class="p-list" id="pList"></div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
+<script src="core.js"></script>
 <script defer src="ball.js"></script>
 </body>
 </html>

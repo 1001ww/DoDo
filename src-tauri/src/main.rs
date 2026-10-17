@@ -117,24 +117,44 @@ fn dirs_data_home() -> Option<std::path::PathBuf> {
     std::env::var("APPDATA").ok().map(|d| std::path::PathBuf::from(d).join("com.dodo.todo"))
 }
 
+/// 路径校验(C60):拒绝空路径、相对路径与含 .. 上跳的路径——前端传入的路径全部为
+/// 数据目录/备份目录下的绝对路径,这里是纵深防御;页面内脚本执行已被 CSP 锁死
+fn safe_path(p: &str) -> Result<std::path::PathBuf, String> {
+    if p.is_empty() {
+        return Err("empty path".into());
+    }
+    let pb = std::path::Path::new(p);
+    if !pb.is_absolute() {
+        return Err(format!("path must be absolute: {p}"));
+    }
+    if pb.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err(format!("path must not contain ..: {p}"));
+    }
+    Ok(pb.to_path_buf())
+}
+
 /// 文件探测(旧数据搬迁判断用)
 #[tauri::command]
 fn fs_exists(path: String) -> Result<bool, String> {
-    Ok(std::path::Path::new(&path).exists())
+    Ok(safe_path(&path)?.exists())
 }
 
 /// 单文件复制(同名覆盖)
-#[tauri::command]
+#[tauri::command(async)]
 fn fs_copy(from: String, to: String) -> Result<(), String> {
-    if let Some(parent) = std::path::Path::new(&to).parent() {
+    let from = safe_path(&from)?;
+    let to = safe_path(&to)?;
+    if let Some(parent) = to.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+    std::fs::copy(from, to).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// 目录递归复制(搬迁 backups 用)
-#[tauri::command]
+#[tauri::command(async)]
 fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
+    let from = safe_path(&from)?;
+    let to = safe_path(&to)?;
     fn rec(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
         std::fs::create_dir_all(dst)?;
         for e in std::fs::read_dir(src)? {
@@ -146,24 +166,27 @@ fn fs_copy_dir(from: String, to: String) -> Result<(), String> {
         }
         Ok(())
     }
-    rec(std::path::Path::new(&from), std::path::Path::new(&to)).map_err(|e| e.to_string())
+    rec(&from, &to).map_err(|e| e.to_string())
 }
 
 /// 同卷原子替换(rename 覆盖目标):恢复备份走「拷临时文件 → rename 落正」,中途失败不会把在用库截成半截
 #[tauri::command]
 fn fs_rename(from: String, to: String) -> Result<(), String> {
-    std::fs::rename(&from, &to).map_err(|e| e.to_string())
+    let from = safe_path(&from)?;
+    let to = safe_path(&to)?;
+    std::fs::rename(from, to).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn make_dir(path: String) -> Result<(), String> {
-    std::fs::create_dir_all(&path).map_err(|e| e.to_string())
+    std::fs::create_dir_all(safe_path(&path)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
+    let path = safe_path(&path)?;
     std::process::Command::new("explorer")
-        .arg(&path)
+        .arg(path)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
@@ -215,7 +238,7 @@ fn is_dodo_backup(p: &std::path::Path) -> bool {
 
 /// 每日自动备份:复制 dodo.db 到备份文件夹(bdir 为空时用数据目录 backups 子目录),文件名带日期,按文件名倒序保留最近 keep 份。
 /// force=true(手动「立即备份」)时同名也覆盖,保证拿到当下时刻的副本;自动备份保持当日仅首份。
-#[tauri::command]
+#[tauri::command(async)]
 fn backup_database(
     dir: String,
     bdir: Option<String>,
@@ -252,7 +275,7 @@ fn backup_database(
 }
 
 /// 备份列表:备份文件夹内 dodo-*.db 备份文件(名称/字节大小/修改时间秒),按名称倒序=最新在前
-#[tauri::command]
+#[tauri::command(async)]
 fn list_backups(dir: String, bdir: Option<String>) -> Result<Vec<serde_json::Value>, String> {
     let base = std::path::Path::new(&dir);
     let bdir = backup_dir_of(base, &bdir);
@@ -360,6 +383,7 @@ async fn sqlite_init(path: String, legacy: Option<String>) -> Result<(), String>
                 let meta_cnt: i64 =
                     sqlx::query("SELECT COUNT(*) FROM meta").fetch_one(&mut *conn).await.map_err(|e| e.to_string())?.try_get(0).map_err(|e| e.to_string())?;
                 if meta_cnt == 0 {
+                    let lp = lp.replace(char::from_u32(0).unwrap(), ""); // NUL 控制字符清洗(C60;0 恒为合法 char)
                     let quoted = lp.replace('\'', "''");
                     let mig = async {
                         sqlx::query(&format!("ATTACH DATABASE '{quoted}' AS legacy_db"))
@@ -508,7 +532,6 @@ fn main() {
         // 注:旧版 tauri-plugin-sql 注册已移除——前端读写全部走本文件的 sqlite_* 自研命令,
         // 表结构权威路径 = sqlite_init(INIT_SQL + PRAGMA 补列),新增字段勿再走插件 Migration。
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // ---- 注册通知应用身份(显示名/图标归 DoDo,而非 PowerShell) ----
@@ -519,7 +542,11 @@ fn main() {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             tauri::tray::TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(
+                    app.default_window_icon()
+                        .ok_or("missing default window icon")?
+                        .clone(),
+                )
                 .tooltip("DoDo 待办")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -543,21 +570,24 @@ fn main() {
 
             // ---- 全局快捷键:Ctrl+Shift+Space 呼出并聚焦快速添加 ----
             // 注册失败(如已有另一 DoDo 实例在运行占用)不阻断启动,仅记日志
-            let sc: Shortcut = "Ctrl+Shift+Space".parse().expect("invalid shortcut");
-            app.handle().plugin(
-                tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |app, shortcut, event| {
-                        if event.state() == ShortcutState::Pressed && shortcut == &sc {
-                            show_main(app);
-                            if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.emit("quick-add-focus", ());
+            if let Ok(sc) = "Ctrl+Shift+Space".parse::<Shortcut>() {
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, shortcut, event| {
+                            if event.state() == ShortcutState::Pressed && shortcut == &sc {
+                                show_main(app);
+                                if let Some(win) = app.get_webview_window("main") {
+                                    let _ = win.emit("quick-add-focus", ());
+                                }
                             }
-                        }
-                    })
-                    .build(),
-            )?;
-            if let Err(e) = app.global_shortcut().register(sc) {
-                eprintln!("[DoDo] 全局快捷键注册失败(可能已有 DoDo 实例在运行): {e}");
+                        })
+                        .build(),
+                )?;
+                if let Err(e) = app.global_shortcut().register(sc) {
+                    eprintln!("[DoDo] 全局快捷键注册失败(可能已有 DoDo 实例在运行): {e}");
+                }
+            } else {
+                eprintln!("[DoDo] 快捷键常量解析失败(不应发生),全局快捷键不可用");
             }
 
             // ---- 悬浮速记球:置顶透明小窗,内容/位置/展开由前端 ball.js 管理 ----

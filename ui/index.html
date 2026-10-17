@@ -4,11 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DoDo · 待办事项 — 设计原型</title>
+<script src="theme-boot.js"></script>
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="app">
+  <noscript>本应用需要启用 JavaScript 才能运行。</noscript>
   <!-- ============ 标题栏 ============ -->
   <header class="titlebar" data-tauri-drag-region>
     <div class="titlebar-left">
@@ -18,16 +20,16 @@
     <div class="titlebar-center">
       <div class="search" id="searchBox">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4.2-4.2"/></svg>
-        <input id="searchInput" placeholder="搜索任务…" autocomplete="off">
+        <input id="searchInput" type="search" placeholder="搜索任务…" autocomplete="off" aria-label="搜索任务" aria-keyshortcuts="/">
         <kbd>/</kbd>
       </div>
     </div>
     <div class="titlebar-right">
-      <button class="icon-btn" id="themeBtn" title="切换明暗主题"></button>
+      <button class="icon-btn" id="themeBtn" type="button" title="切换明暗主题" aria-label="切换明暗主题"></button>
       <div class="win-controls">
-        <button class="win-btn" data-win="min"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
-        <button class="win-btn" data-win="max"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
-        <button class="win-btn close" data-win="close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <button class="win-btn" type="button" aria-label="最小化" data-win="min"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+        <button class="win-btn" type="button" aria-label="最大化/还原" data-win="max"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+        <button class="win-btn close" type="button" aria-label="关闭" data-win="close"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
     </div>
   </header>
@@ -44,7 +46,7 @@
           <div class="qa-plus"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
           <div class="qa-mid">
             <div class="qa-chips" id="qaChips"></div>
-            <input id="qaInput" placeholder="添加任务…如:明天 14:00 写周报 #工作 !高" autocomplete="off">
+            <input id="qaInput" placeholder="添加任务…如:明天 14:00 写周报 #工作 !高" autocomplete="off" aria-label="快速添加任务">
           </div>
           <button class="qa-help" id="qaHelp" title="输入语法说明" type="button">?</button>
           <div class="qa-hint"><kbd>Enter</kbd> 添加</div>
@@ -56,8 +58,10 @@
     <aside class="detail" id="detailPanel"><div class="detail-inner" id="detailInner"></div></aside>
   </div>
 </div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
+<script src="core.js"></script>
+<script src="parser.js"></script>
 <script defer src="app.js"></script>
 </body>
 </html>
