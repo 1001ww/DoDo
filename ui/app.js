@@ -94,16 +94,14 @@ function normRepeat(r){
 }
 
 /* ================= 状态 ================= */
-let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'today',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
+let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'upcoming',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
 const SAMPLE=JSON.parse(JSON.stringify(DEMO_TASKS));
-const state={view:'today',search:'',calMonth:null,calSel:TODAY,detailId:null};
+const state={view:'upcoming',search:'',calMonth:null,calSel:TODAY,detailId:null};
 if(!state.calMonth){const n=new Date();state.calMonth=new Date(n.getFullYear(),n.getMonth(),1)}
 
 /* ================= 侧边栏 ================= */
 const SMART=[
-  {id:'today',   name:'今天',  icon:'sun'},
-  {id:'inbox',   name:'收件箱',icon:'inbox'},
-  {id:'upcoming',name:'计划',  icon:'cal7'},
+  {id:'upcoming',name:'待办',  icon:'cal7'},
   {id:'kanban',  name:'看板',  icon:'kanban'},
   {id:'calendar',name:'日历',  icon:'calendar'},
   {id:'all',     name:'全部',  icon:'layers'},
@@ -113,16 +111,14 @@ const SMART=[
 let EXTRA_TAGS=[];
 function tagList(){return[...new Set([...EXTRA_TAGS,...tasks.flatMap(t=>t.tags||[])])]}
 function buildSidebar(){
-  const todayCnt=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<=0).length;
   const overdueCnt=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<0).length;
-  const inboxCnt=tasks.filter(t=>!t.done&&!t.list).length;
   const nav=(v,name,icon,badge,red)=>`
     <div class="nav-item ${state.view===v?'active':''}" data-nav="${v}">
       ${ic(icon,16.5)}<span class="nav-name">${name}</span>${badge?`<span class="badge ${red?'red':''}">${badge}</span>`:''}
     </div>`;
   let html=`
   <div class="nav-sec" style="margin-top:2px">${SMART.map(s=>nav(s.id,s.name,s.icon,
-    s.id==='today'?todayCnt:(s.id==='inbox'?inboxCnt:0),s.id==='today'&&overdueCnt>0)).join('')}</div>`;
+    s.id==='upcoming'&&overdueCnt>0?overdueCnt:0,s.id==='upcoming'&&overdueCnt>0)).join('')}</div>`;
   html+=`<div class="nav-sec">
     <div class="nav-sec-head"><span>清单</span></div>
     ${LISTS.map(l=>{const c=tasks.filter(t=>!t.done&&t.list===l.id).length;return`
@@ -150,12 +146,8 @@ function matchSearch(t){
 function groups(){
   const v=state.view, g=[];
   const push=(title,items,accent)=>{items=items.filter(matchSearch).sort(cmp);if(items.length||!state.search.trim())g.push({title,items,accent})};
-  if(v==='today'){
+  if(v==='upcoming'){
     push('逾期',tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<0),'overdue');
-    push('今天',tasks.filter(t=>!t.done&&t.due===TODAY));
-  }else if(v==='inbox'){
-    push('收件箱',tasks.filter(t=>!t.done&&!t.list));
-  }else if(v==='upcoming'){
     for(let i=0;i<7;i++){const d=addDays(i);
       push(dayLabel(d),tasks.filter(t=>!t.done&&t.due===d),i===0?'today':'');}
   }else if(v==='all'){
@@ -200,7 +192,6 @@ function taskRow(t,opts={}){
     <div class="task-side">
       ${t.prio?`<span class="${PRIO[t.prio].cls}" title="${PRIO[t.prio].n}优先级">${ic('flag',14,2)}</span>`:''}
       <span class="row-actions">
-        ${opts.move?`<button class="row-btn" data-move="${t.id}" title="移到明天">${ic('arrow',14)}</button>`:''}
         ${t.done?`<button class="row-btn ok" data-restore="${t.id}" title="恢复任务">${ic('undo',14)}</button>`:''}
         <button class="row-btn del" data-del="${t.id}" title="删除">${ic('trash',14)}</button>
       </span>
@@ -478,33 +469,22 @@ function buildMain(){
   const flat=G.flatMap(x=>x.items);
   const shown=G.filter(g=>g.items.length);
   let head='',ring='';
-  if(v==='today'){
-    const undone=tasks.filter(t=>!t.done&&t.due&&diffDays(TODAY,t.due)<=0).length;
-    const doneToday=tasks.filter(t=>t.done&&t.doneAt===TODAY).length;
-    const total=undone+doneToday, pct=total?Math.round(doneToday/total*100):0;
-    if(total)ring=`<div class="ring-wrap"><svg width="46" height="46" viewBox="0 0 46 46">
-      <circle cx="23" cy="23" r="19" fill="none" stroke="var(--border)" stroke-width="4.5"/>
-      <circle cx="23" cy="23" r="19" fill="none" stroke="${pct===100?'var(--green)':'var(--primary)'}" stroke-width="4.5" stroke-linecap="round"
-        stroke-dasharray="${(2*Math.PI*19).toFixed(1)}" stroke-dashoffset="${(2*Math.PI*19*(1-pct/100)).toFixed(1)}" transform="rotate(-90 23 23)" style="transition:stroke-dashoffset .5s"/>
-      </svg><div class="ring-num">${pct}%</div></div>`;
-    const x=new Date();
-    head=`<div class="view-title">今天</div><div class="view-sub">${x.getFullYear()}年${x.getMonth()+1}月${x.getDate()}日 · ${WD[x.getDay()]}</div>`;
-  }else{
-    const names={inbox:'收件箱',upcoming:'计划',all:'全部',completed:'已完成'};
-    const subs={inbox:'没有清单归属的任务会先落在这里',upcoming:'未来 7 天的任务安排',all:'所有未完成任务,按清单分组',completed:'已完成任务的记录'};
+  {
+    const names={upcoming:'待办',all:'全部',completed:'已完成'};
+    const subs={upcoming:'逾期与未来 7 天的任务安排',all:'所有未完成任务,按清单分组',completed:'已完成任务的记录'};
     if(v.startsWith('list:')){const l=listById(v.slice(5));head=`<div class="view-title">${esc(l?l.name:'')}</div><div class="view-sub">${flat.length} 个未完成任务</div>`}
     else if(v.startsWith('tag:'))head=`<div class="view-title"># ${esc(v.slice(4))}</div><div class="view-sub">按标签筛选的任务</div>`;
     else head=`<div class="view-title">${names[v]||''}</div><div class="view-sub">${subs[v]||''}</div>`;
   }
   const stat=state.search.trim()
     ?`<span>搜索“${esc(state.search)}” · ${flat.length} 个结果</span>`
-    :(v==='today'?`<span>${flat.length} 项待完成</span>`:`<span>${flat.length} 项</span>`);
+    :`<span>${flat.length} 项</span>`;
   let body='';
   if(state.search.trim()&&!flat.length)body=emptyState('inbox','没有找到匹配的任务','试试更换关键词');
   else if(!flat.length)body=emptyState('check','这里没有任务','享受当下,或用下方输入条快速添加');
   else body=shown.map(g=>`<div class="group">
       <div class="group-title ${g.accent==='overdue'?'overdue':''}">${esc(g.title)}<span class="cnt">${g.items.length}</span></div>
-      ${g.items.map(t=>taskRow(t,{move:v==='today'})).join('')}</div>`).join('');
+      ${g.items.map(t=>taskRow(t)).join('')}</div>`).join('');
   el.innerHTML=`<div class="${av}"><div class="view-head"><div>${head}</div><div class="view-stat">${stat}${ring}</div></div>${body}</div>`;
 }
 
@@ -1138,7 +1118,6 @@ document.addEventListener('click',e=>{
     return}
   const tg=e.target.closest('[data-toggle]');
   if(tg){e.stopPropagation();toggleDone(+tg.dataset.toggle);return}
-  const mv=e.target.closest('[data-move]');if(mv){e.stopPropagation();moveTomorrow(+mv.dataset.move);return}
   const rs=e.target.closest('[data-restore]');if(rs){e.stopPropagation();toggleDone(+rs.dataset.restore);return}
   const cp=e.target.closest('[data-copy]');if(cp){e.stopPropagation();copyTask(+cp.dataset.copy);return}
   const dl=e.target.closest('[data-del]');if(dl){e.stopPropagation();deleteTask(+dl.dataset.del);return}
@@ -1864,6 +1843,7 @@ async function boot(){
   await DB.init();
   await loadAll();
   tasks.forEach(t=>{t.repeat=normRepeat(t.repeat)});
+  if(!SMART.some(s=>s.id===settings.startView))settings.startView='upcoming'; /* 旧默认 today/已删 inbox 归一化(C63) */
   if(SMART.some(s=>s.id===settings.startView))state.view=settings.startView;
   applyTheme();
   reviveRepeats();
