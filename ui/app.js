@@ -1778,7 +1778,7 @@ function ballPush(){
       theme:document.documentElement.dataset.theme,
       visible:settings.ballVisible!==false,
       lists:LISTS.map(l=>({id:l.id,name:l.name,color:l.color})),
-      tasks:tasks.filter(t=>!t.done?(t.due&&t.due<=TODAY):t.doneAt===TODAY).map(t=>({
+      tasks:tasks.filter(t=>!t.done||t.doneAt===TODAY).map(t=>({ /* C64:球面板待办=全部未完成(无日期殿后) */
         id:t.id,t:t.title,due:t.due||null,time:t.time||null,list:t.list||null,
         prio:t.prio||0,rep:t.repeat?fmtRepeat(t.repeat):null,
         done:!!t.done,doneAt:t.doneAt||null,

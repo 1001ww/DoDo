@@ -101,7 +101,7 @@ function applyState(s){
   if(mode!=='ball')renderList(!justOpened);
   justOpened=false;
 }
-const pending=()=>S.tasks.filter(t=>!t.done&&t.due&&t.due<=S.today);
+const pending=()=>S.tasks.filter(t=>!t.done); /* C64:待办视图=全部未完成(逾期在前/按到期日升序/无日期殿后) */
 const doneToday=()=>S.tasks.filter(t=>t.done&&t.doneAt===S.today);
 const listColor=id=>{const l=S.lists.find(x=>x.id===id);return l?l.color:'#A4A4B0'};
 const listName=id=>{const l=S.lists.find(x=>x.id===id);return l?l.name:''};
@@ -133,11 +133,17 @@ function renderList(anim){
     </svg><span class="ring-num">${tDone}/${tTotal}</span>`;
   if(!p.length&&!d.length){
     box.innerHTML=`<div class="alldone"><div class="big">${ic('checkS',22,2.4)}</div>
-      <div class="t1">今天暂无待办</div><div class="t2">从上方输入框快速记一条吧</div></div>`;
+      <div class="t1">暂无待办</div><div class="t2">从上方输入框快速记一条吧</div></div>`;
     updateBall();fitWindow();return;
   }
   let html='';
-  const over=p.filter(t=>t.due<S.today),today=p.filter(t=>t.due===S.today);
+  const over=p.filter(t=>t.due&&t.due<S.today);
+  /* 待办排序(C64):有日期按到期日升序(逾期自然置顶),无日期殿后 */
+  const sorted=[...p].sort((a,b)=>{
+    const da=a.due||'9999-99-99',db=b.due||'9999-99-99';
+    if(da!==db)return da<db?-1:1;
+    return a.id-b.id;
+  });
   const row=t=>{
     const lc=listColor(t.list);
     return`<div class="trow" data-id="${t.id}">
@@ -146,8 +152,7 @@ function renderList(anim){
       <span class="tmeta">${t.time?`<span>${esc(t.time)}</span>`:''}${t.rep?`<span class="rep">${ic('repeat',11,2)}${esc(t.rep)}</span>`:''}${t.subs?`<span>${esc(t.subs)}</span>`:''}${t.due<S.today?`<span class="over">${esc(fmtDue(t.due))}</span>`:''}${t.prio?`<span class="flag${t.prio}">${ic('flag',12,2)}</span>`:''}</span>
       <span class="acts">${t.due<S.today?`<button class="row-btn" data-tom="${t.id}" title="移到明天">${ic('arrow',13)}</button>`:''}<button class="row-btn del" data-del="${t.id}" title="删除">${ic('trash',13)}</button></span>
     </div>`};
-  if(over.length)html+=`<div class="grp over">${ic('calendar',12,2.2)}逾期<span class="cnt">${over.length}</span></div>`+over.map(row).join('');
-  if(today.length)html+=`<div class="grp">${ic('sun',12,2.2)}今天<span class="cnt">${today.length}</span></div>`+today.map(row).join('');
+  if(p.length)html+=`<div class="grp">${ic('list',12,2.2)}待办<span class="cnt">${p.length}</span></div>`+sorted.map(row).join('');
   if(d.length){
     html+=`<div class="done-head ${doneOpen?'':'closed'}" data-donehead>${ic('checkS',12,2.4)}已完成<span class="cnt">${d.length}</span><span class="arr">${ic('chevD',12,2.2)}</span></div>`;
     if(doneOpen)html+=d.map(t=>`<div class="donerow" data-id="${t.id}">
@@ -157,7 +162,7 @@ function renderList(anim){
   }
   if(!p.length&&d.length){
     html=`<div class="alldone"><div class="big">${ic('checkS',22,2.4)}</div>
-      <div class="t1">今天全部完成 🎉</div><div class="t2">共 ${d.length} 项 · 休息一下吧</div></div>`+html;
+      <div class="t1">全部完成 🎉</div><div class="t2">共 ${d.length} 项 · 休息一下吧</div></div>`+html;
   }
   box.innerHTML=html;
   updateBall();
