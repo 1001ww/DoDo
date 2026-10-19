@@ -1797,7 +1797,7 @@ function ballAdd(text){
     due:p.due||null,time:p.time||null,remind:p.remind||settings.defaultRemind||null,
     repeat:p.repeat||null,note:'',subs:[],done:false,doneAt:null});
   render();toast(`已添加「${esc(title)}」${p.due?'':(list?` · 已入「${esc(listById(list)?.name||'')}」`:' · 在收件箱')}`);
-  try{window.__TAURI__.event.emit('ball-toast',{m:`已添加「${title}」${p.due?'':(list?' · 已入清单':' · 在收件箱')}`})}catch(e){} // 主窗常隐藏,落点确认回投球窗
+  try{window.__TAURI__.event.emit('ball-toast',{m:`已添加「${title}」${p.due?'':(list?' · 已入清单':' · 在收件箱')}`,ball:'已添加'})}catch(e){} // 主窗常隐藏,落点确认回投球窗(ball=球面短文案,C65)
 }
 if(window.__TAURI__?.event?.listen){
   const ballOn=(n,f)=>window.__TAURI__.event.listen(n,f);

@@ -106,7 +106,9 @@ const doneToday=()=>S.tasks.filter(t=>t.done&&t.doneAt===S.today);
 const listColor=id=>{const l=S.lists.find(x=>x.id===id);return l?l.color:'#A4A4B0'};
 const listName=id=>{const l=S.lists.find(x=>x.id===id);return l?l.name:''};
 
+let ballMsgUntil=0,ballMsgText='',ballMsgTimer=null; /* 球态文字反馈(C65):62px 窗口放不下 DOM toast,改在球面短暂显示 */
 function updateBall(){
+  if(Date.now()<ballMsgUntil){$('#ballIco').innerHTML=`<span class="blab">${esc(ballMsgText)}</span>`;return}
   const p=pending(),d=doneToday(),total=p.length+d.length;
   const allDone=p.length===0;
   $('#ballIco').innerHTML=allDone
@@ -329,10 +331,16 @@ $('#pInput').addEventListener('keydown',e=>{
 
 /* ================= Toast ================= */
 let toastTimer=null;
-function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');
+function toast(msg,ballShort){
+  if(mode==='ball'){ /* 球态窗口仅 62×62,DOM toast 会被裁切压在球面上(C65):改为球面短暂文字 */
+    ballMsgText=ballShort||'已处理';ballMsgUntil=Date.now()+1200;updateBall();
+    clearTimeout(ballMsgTimer);ballMsgTimer=setTimeout(()=>{ballMsgUntil=0;updateBall()},1300);
+    return;
+  }
+  const t=$('#toast');t.textContent=msg;t.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200)}
 /* 主窗 → 球窗单向提示(如速记添加的落点确认) */
-if(EV)EV.listen('ball-toast',e=>{if(e&&e.payload&&e.payload.m)toast(e.payload.m)});
+if(EV)EV.listen('ball-toast',e=>{if(e&&e.payload&&e.payload.m)toast(e.payload.m,e.payload.ball)});
 
 /* ================= 列表交互 ================= */
 $('#pList').addEventListener('click',e=>{
@@ -356,7 +364,7 @@ $('#pList').addEventListener('click',e=>{
   const tom=e.target.closest('[data-tom]');
   if(tom){emit('ball-tomorrow',{id:+tom.dataset.tom});return}
   const del=e.target.closest('[data-del]');
-  if(del){emit('ball-del',{id:+del.dataset.del});toast('已删除')}
+  if(del){emit('ball-del',{id:+del.dataset.del});toast('已删除','已删除')}
 });
 
 /* ================= 失焦自动收起 / Esc ================= */
