@@ -23,7 +23,10 @@ function parseQuick(raw){
     return out;
   });
   const chips=[];let due=null,time=null,list=null,prio=0,repeat=null,remind=null;const tags=[];
-  const take=re=>{const m=text.match(re);if(m){text=text.replace(m[0],' ').trim();return m}return null};
+  /* 分隔标点清理(C68):token 移除后紧随的分隔符是断句残留(如「#清单!高，阶段设置」的「，」),
+     随 token 一并消费;只在移除点生效(空格+分隔符仅由 token 替换产生),不碰未识别路径的正文标点 */
+  const scrubSep=s=>s.replace(/\s+[，,、;；:：。]+/g,' ').replace(/^[，,、;；:：。]+/,'').replace(/[，,、;；:：。\s]+$/,'').trim();
+  const take=re=>{const m=text.match(re);if(m){text=scrubSep(text.replace(m[0],' '));return m}return null};
   let m;
   /* 英文时刻:3pm / 10:30am(必须先于数字时刻,否则 3:30pm 会被截成 3:30) */
   if(m=take(/\b(0?[0-9]|1[0-2])(?::([0-5]\d))?\s*(am|pm)\b/i)){
@@ -73,7 +76,7 @@ function parseQuick(raw){
     const[y,mo,dd]=m[0].split('-').map(Number),p=v=>String(v).padStart(2,'0'),d=new Date(y,mo-1,dd);
     // 越界日期(2026-99-99 / 2026-2-30)不解析也不吞字:round-trip 校验拦截 Date 自动进位
     if(mo>=1&&mo<=12&&dd>=1&&dd<=31&&iso(d)===`${y}-${p(mo)}-${p(dd)}`){
-      text=text.replace(m[0],' ').trim();due=iso(d);chips.push({k:'date',v:m[0]});
+      text=scrubSep(text.replace(m[0],' '));due=iso(d);chips.push({k:'date',v:m[0]});
     }
   }
   if(!due&&(m=take(/(下下|下)?周[一二三四五六日天]/))){
@@ -90,16 +93,16 @@ function parseQuick(raw){
   if(!due&&(m=text.match(/\d{1,2}[日号]/))){
     const day=parseInt(m[0],10);
     if(day>=1&&day<=31){
-      text=text.replace(m[0],' ').trim();
+      text=scrubSep(text.replace(m[0],' '));
       const now=new Date();
       let d=new Date(now.getFullYear(),now.getMonth(),day);
       if(d<new Date(now.getFullYear(),now.getMonth(),now.getDate()))d=new Date(now.getFullYear(),now.getMonth()+1,day);
       due=iso(d);chips.push({k:'date',v:m[0]});
     }
   }
-  /* 清单与标签:捕获在 ! @ # 处截断,支持 #清单!高 / #清单@标签 连写,不再整体吞成一个标记(C47) */
-  while(m=take(/#([^#!@\s]+)/)){const g=m[1];const l=LISTS.find(l=>l.name===g||l.name.startsWith(g));if(l){list=l.id;chips.push({k:'list',v:'#'+l.name})}else{tags.push(g);chips.push({k:'tag',v:'#'+g})}}
-  while(m=take(/@([^#!@\s]+)/)){tags.push(m[1]);chips.push({k:'tag',v:'@'+m[1]})}
+  /* 清单与标签:捕获在 ! @ # 与分隔符处截断,支持 #清单!高 / #清单@标签 连写,不再整体吞成一个标记(C47/C68) */
+  while(m=take(/#([^#!@\s，,、;；:：。]+)/)){const g=m[1];const l=LISTS.find(l=>l.name===g||l.name.startsWith(g));if(l){list=l.id;chips.push({k:'list',v:'#'+l.name})}else{tags.push(g);chips.push({k:'tag',v:'#'+g})}}
+  while(m=take(/@([^#!@\s，,、;；:：。]+)/)){tags.push(m[1]);chips.push({k:'tag',v:'@'+m[1]})}
   /* 优先级:!高 / 高优先级 / 优先级高 / P1-P3 */
   if(m=take(/!(?:优先级)?(高|中|低)(?:优先级)?/)){prio={高:3,中:2,低:1}[m[1]]}
   else if(m=take(/(高|中|低)优先级/)){prio={高:3,中:2,低:1}[m[1]]}
@@ -107,7 +110,7 @@ function parseQuick(raw){
   else if(m=take(/\bP([123])\b/i)){prio={'1':3,'2':2,'3':1}[m[1].toLowerCase()]}
   if(prio)chips.push({k:'prio',v:{3:'高',2:'中',1:'低'}[prio],p:prio});
   /* 提醒(C48):时刻+提醒[我] / 准时提醒 / 提前N分钟|小时提醒(支持中文数字与「半」,按任务时刻换算);无任务时刻则保留原文 */
-  const trimTail=()=>{text=text.replace(m[0],' ').trim().replace(/[\s,，、;；:：.。]+$/,'')};
+  const trimTail=()=>{text=scrubSep(text.replace(m[0],' '))};
   if(!remind&&(m=text.match(/((?:上午|早上|中午|下午|晚上|凌晨)?\s*\d{1,2}(?:[:：点]\d{0,2})?分?半?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*提醒(?:我)?/i))){
     const am=m[1].match(/上午|早上|中午|下午|晚上|凌晨/)?.[0],half=/半/.test(m[1]);
     let t=m[1].replace(/[分\s]/g,'').replace(/[：点]/g,':').replace(/半/g,'').replace(/\s*(am|pm)/i,'');

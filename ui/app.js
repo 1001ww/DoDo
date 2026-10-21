@@ -662,6 +662,14 @@ function runParseTests(){
   r=parseQuick('#工作!高 写周报');F(r.list==='work'&&r.prio===3&&r.text==='写周报','#清单!高=清单+优先级');
   r=parseQuick('#工作@重要!中 事项');F(r.list==='work'&&r.tags.includes('重要')&&r.prio===2&&r.text==='事项','#清单@标签!中 三连写');
   r=parseQuick('#工作!不存在的优先级');F(r.list==='work'&&r.text==='!不存在的优先级'&&!r.prio,'#清单!非优先级词=!留在标题');
+  /* C68:token 后的分隔标点是断句残留,不进标题也不进标记;#/@ 捕获在分隔符处截断 */
+  r=parseQuick('#项目管理!高，阶段设置');F(r.tags.includes('项目管理')&&r.prio===3&&r.text==='阶段设置','token后全角逗号残留不进标题(用户报告用例)');
+  r=parseQuick('#项目管理!高,阶段设置');F(r.prio===3&&r.text==='阶段设置','token后半角逗号同上');
+  r=parseQuick('#项目管理，阶段设置');F(r.tags.includes('项目管理')&&r.text==='阶段设置','#捕获在分隔符处截断');
+  r=parseQuick('写周报 #工作，准备材料');F(r.list==='work'&&r.text==='写周报 准备材料','token后分隔符=断句残留(句中清理)');
+  r=parseQuick('明天，开会');F(r.due===addDays(1)&&r.text==='开会','日期后分隔符残留(内联路径)');
+  r=parseQuick('16点提醒我，取药');F(r.remind===tRollover(16)+' 16:00'&&r.text==='取药','提醒后全角逗号残留');
+  r=parseQuick('买苹果，香蕉');F(r.text==='买苹果，香蕉','无token时正文标点原样保留');
   /* C48:提醒语法(时刻+提醒 / 提前N / 准时;无任务时刻则保留原文)。C58 起非重复任务提醒统一为绝对日期时刻 */
   r=parseQuick('明天18点工作汇报,16点提醒我');F(r.due===addDays(1)&&r.time==='18:00'&&r.remind===addDays(1)+' 16:00'&&r.text==='工作汇报','时刻+提醒时刻(用户报告用例)');
   r=parseQuick('明天 14:00 开会 提前2小时提醒');F(r.time==='14:00'&&r.remind===addDays(1)+' 12:00'&&r.text==='开会','提前N小时=按任务时刻换算');
