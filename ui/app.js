@@ -94,7 +94,7 @@ function normRepeat(r){
 }
 
 /* ================= 状态 ================= */
-let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'upcoming',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
+let settings=Object.assign({themeMode:localStorage.getItem('dodo-theme')||'light',startView:'upcoming',weekStart:'mon',timeFormat:'24',notify:true,defaultRemind:null,dataDir:'',backupDir:'',ballVisible:true,updates:true},JSON.parse(localStorage.getItem('dodo-settings')||'{}'));
 const SAMPLE=JSON.parse(JSON.stringify(DEMO_TASKS));
 const state={view:'upcoming',search:'',calMonth:null,calSel:TODAY,detailId:null};
 if(!state.calMonth){const n=new Date();state.calMonth=new Date(n.getFullYear(),n.getMonth(),1)}
@@ -1077,12 +1077,14 @@ function copyTask(id){
   toast(`已创建副本「${esc(c.title)}」`);
 }
 function moveTomorrow(id){const t=byId(id);if(!t)return;t.due=addDays(1);render();toast('已移到明天')}
-function toast(msg,undoFn){
+function toast(msg,action){ /* action:函数=撤销按钮(旧式,4.5s);对象{label,fn,dur}=自定义动作按钮(默认 10s,C66 更新提示用) */
   const el=$('#toast');
-  el.innerHTML=`<span>${msg}</span>${undoFn?'<button data-undo>撤销</button>':''}`;
+  const act=typeof action==='function'?{label:'撤销',fn:action}:action;
+  el.innerHTML=`<span>${msg}</span>${act?`<button data-undo>${esc(act.label||'撤销')}</button>`:''}`;
   el.style.display='flex';
-  if(undoFn)el.querySelector('[data-undo]').onclick=()=>{undoFn();el.style.display='none'};
-  clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',undoFn?4500:2600);
+  if(act)el.querySelector('[data-undo]').onclick=()=>{el.style.display='none';act.fn()};
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.style.display='none',act?(act.dur||(typeof action==='function'?4500:10000)):2600);
 }
 
 /* ================= 主题 ================= */
@@ -1336,9 +1338,12 @@ function buildSettings(){
       <h3 style="margin-top:20px">标签</h3><div class="sdesc">重命名会同步到所有任务;删除会从所有任务上移除;拖动 ⠿ 调整顺序</div>
       <div class="mlist">${tagRows}${editState.mode==='tag-new'?editRow('tag','',false):''}</div>${addRow('tag','新增标签')}`;
   }else{
+    const us=window.Updater?Updater.statusText():{sd:'',btn:'检查更新',dim:1};
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
         <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">${APP_VERSION?'v'+APP_VERSION:''}</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
+      <div class="srow" style="cursor:default"><div><div class="sl">软件更新</div><div class="sd">${us.sd||'点击检查是否有新版本'}</div></div><button class="sbtn" data-sact="checkupdate" ${us.dim?'disabled':''}>${us.btn}</button></div>
+      <div class="srow"><div><div class="sl">自动检查更新</div><div class="sd">启动与回前台时后台检查(每天最多一次),发现新版本轻提示</div></div><button class="switch ${settings.updates!==false?'on':''}" data-stoggle="updates" title="切换"></button></div>
       <div class="srow" style="cursor:default"><span class="sl">技术预览</span></div>
       <div class="chiprow"><span class="stackchip">Tauri 2</span><span class="stackchip">Web 前端</span><span class="stackchip">本地 SQLite</span><span class="stackchip">Noto Sans SC</span></div>
       <p class="sdesc" style="margin-top:14px">本地优先的 Windows 桌面待办应用;数据仅存本地,无需注册登录。</p>`;
@@ -1404,6 +1409,7 @@ function settingsClick(e){
   }
   const act=e.target.closest('[data-sact]');if(act){
     const a=act.dataset.sact;
+    if(a==='checkupdate'){(window.Updater&&Updater.state()==='available')?Updater.openDialog():Updater.check(true);return}
     if(a==='export'){exportData();return}
     if(a==='backupnow'){backupNow();return}
     if(a==='openfolder'){openDataFolder();return}
@@ -1853,9 +1859,11 @@ async function boot(){
   if(inv){
     inv('autostart_status').then(v=>{autostartOn=!!v}).catch(()=>{});
     autoBackup();
+    Updater.autoCheck(); /* C66:启动后台检查更新(24h 节流,失败静默,发现新版 Toast 轻提示) */
   }
 }
 boot();
+document.addEventListener('dodo:updater-state',()=>{const ov=document.getElementById('settingsOverlay');if(ov&&settingsTab==='about')buildSettings()});
 function render(){TODAY=iso(new Date());buildSidebar();buildMain();buildDetail();scheduleSync();ballPush();renderSyncBar()}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){reviveRepeats();render()}});
 

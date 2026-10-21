@@ -533,6 +533,9 @@ fn main() {
         // 表结构权威路径 = sqlite_init(INIT_SQL + PRAGMA 补列),新增字段勿再走插件 Migration。
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_dialog::init())
+        // 应用内检查更新:更新源/公钥见 tauri.conf.json plugins.updater,
+        // native-tls = 走系统证书库(兼容 TLS 拦截的企业/安全软件网络)
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // ---- 注册通知应用身份(显示名/图标归 DoDo,而非 PowerShell) ----
             register_aumid(app.handle());

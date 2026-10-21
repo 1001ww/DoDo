@@ -1,8 +1,8 @@
-; DoDo 自定义 NSIS 模板(C43)
+; DoDo 自定义 NSIS 模板(C43/C66)
 ; 来源:Tauri 2 生成的 installer.nsi 复制后仅改三处快捷方式创建(追加悬停描述参数)
-; 注意:升级 @tauri-apps/cli 后需对比官方模板同步差异;模板内 D:\project\DoDo 绝对路径为构建机绑定,迁移仓库需同步修改
-; 注意:升级 @tauri-apps/cli 后需对比官方模板同步差异;MAINBINARYSRCPATH 为构建机绝对路径,迁移仓库需同步修改
-; 注意:升级 @tauri-apps/cli 后需对比官方模板同步差异;MAINBINARYSRCPATH 为构建机绝对路径,迁移仓库需同步修改
+; C66 起版本/路径等 6 处恢复为 Handlebars 占位符(此前硬编码导致注册表 DisplayVersion 恒为 0.3.2):
+;   version / version_with_build / main_binary_path / out_file / estimated_size / additional_plugins_path
+; 注意:升级 @tauri-apps/cli 后需对比官方模板同步差异;直接编辑本模板即可,勿再从构建产物整份拷回
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -40,8 +40,8 @@ ${StrLoc}
 
 !define MANUFACTURER "dodo"
 !define PRODUCTNAME "DoDo"
-!define VERSION "0.3.2"
-!define VERSIONWITHBUILD "0.3.2.0"
+!define VERSION "{{version}}"
+!define VERSIONWITHBUILD "{{version_with_build}}"
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
@@ -51,12 +51,12 @@ ${StrLoc}
 !define UNINSTALLERICON ""
 !define UNINSTALLERHEADERIMAGE ""
 !define MAINBINARYNAME "dodo"
-!define MAINBINARYSRCPATH "D:\project\DoDo\src-tauri\target\release\dodo.exe"
+!define MAINBINARYSRCPATH "{{main_binary_path}}"
 !define BUNDLEID "com.dodo.todo"
 !define COPYRIGHT ""
-!define OUTFILE "nsis-output.exe"
+!define OUTFILE "{{out_file}}"
 !define ARCH "x64"
-!define ADDITIONALPLUGINSPATH "C:\Users\weish\AppData\Local\tauri\NSIS\Plugins\x86-unicode\additional"
+!define ADDITIONALPLUGINSPATH "{{additional_plugins_path}}"
 !define ALLOWDOWNGRADES "true"
 !define DISPLAYLANGUAGESELECTOR "false"
 !define INSTALLWEBVIEW2MODE "downloadBootstrapper"
@@ -68,7 +68,7 @@ ${StrLoc}
 !define MANUKEY "Software\${MANUFACTURER}"
 !define MANUPRODUCTKEY "${MANUKEY}\${PRODUCTNAME}"
 !define UNINSTALLERSIGNCOMMAND ""
-!define ESTIMATEDSIZE "9416"
+!define ESTIMATEDSIZE "{{estimated_size}}"
 !define STARTMENUFOLDER ""
 
 Var PassiveMode

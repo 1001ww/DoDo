@@ -3,6 +3,17 @@
 本项目的所有显著变更记录于此文件。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循语义化版本。
 
+## [未发布]
+
+### 新增
+
+- **应用内检查更新**：启动时后台检查（每天最多一次、可在设置关闭），发现新版本底部轻提示不打断操作；「设置 → 关于」支持手动检查；更新弹窗内完成下载（实时进度、minisign 签名校验）与静默安装，装完自动重启进入新版本。更新源为 GitHub Releases（`releases/latest/download/latest.json`）；安装器还原 Tauri Handlebars 占位符以支持更新器静默接管
+- `npm run build` 现自动注入更新签名私钥（`scripts/with-sign-key.js` 包装；私钥仅存本机 `~/.tauri/dodo.key`，不入库）
+
+### 修复
+
+- **安装器版本信息错误**：自定义 NSIS 模板此前为构建产物整份拷贝，版本号等 6 处被硬编码，导致注册表 DisplayVersion 恒显示 0.3.2、EstimatedSize 恒为旧值；现还原为 `{{version}}` 等占位符，随构建正确写入
+
 ## [0.4.1] - 2026-10-20
 
 ### 变更
