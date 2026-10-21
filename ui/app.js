@@ -1338,7 +1338,7 @@ function buildSettings(){
       <h3 style="margin-top:20px">标签</h3><div class="sdesc">重命名会同步到所有任务;删除会从所有任务上移除;拖动 ⠿ 调整顺序</div>
       <div class="mlist">${tagRows}${editState.mode==='tag-new'?editRow('tag','',false):''}</div>${addRow('tag','新增标签')}`;
   }else{
-    const us=window.Updater?Updater.statusText():{sd:'',btn:'检查更新',dim:1};
+    const us=typeof Updater!=='undefined'?Updater.statusText():{sd:'',btn:'检查更新'};
     c.innerHTML=`<h3>关于</h3><div class="sdesc" style="margin-bottom:10px"></div>
       <div class="about-hero"><div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></svg></div>
         <div><h4>DoDo <span style="font-weight:500;font-size:12px;color:var(--text-3)">${APP_VERSION?'v'+APP_VERSION:''}</span></h4><p>快速捕捉、清晰聚焦、赏心悦目的 Windows 桌面待办应用</p></div></div>
@@ -1409,7 +1409,7 @@ function settingsClick(e){
   }
   const act=e.target.closest('[data-sact]');if(act){
     const a=act.dataset.sact;
-    if(a==='checkupdate'){(window.Updater&&Updater.state()==='available')?Updater.openDialog():Updater.check(true);return}
+    if(a==='checkupdate'){if(typeof Updater!=='undefined'){Updater.state()==='available'?Updater.openDialog():Updater.check(true)}return}
     if(a==='export'){exportData();return}
     if(a==='backupnow'){backupNow();return}
     if(a==='openfolder'){openDataFolder();return}
