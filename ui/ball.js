@@ -103,7 +103,6 @@ function applyState(s){
 }
 const pending=()=>S.tasks.filter(t=>!t.done); /* C64:待办视图=全部未完成(逾期在前/按到期日升序/无日期殿后) */
 const doneToday=()=>S.tasks.filter(t=>t.done&&t.doneAt===S.today);
-const listColor=id=>{const l=S.lists.find(x=>x.id===id);return l?l.color:'#A4A4B0'};
 const listName=id=>{const l=S.lists.find(x=>x.id===id);return l?l.name:''};
 
 let ballMsgUntil=0,ballMsgText='',ballMsgTimer=null; /* 球态文字反馈(C65):62px 窗口放不下 DOM toast,改在球面短暂显示 */
@@ -147,10 +146,9 @@ function renderList(anim){
     return a.id-b.id;
   });
   const row=t=>{
-    const lc=listColor(t.list);
     return`<div class="trow" data-id="${t.id}">
       <span class="checkbox" data-check="${t.id}"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.6 9 10 3"/></svg></span>
-      <span class="tmain"><span class="ldot" style="background:${lc}"></span><span class="tt2" title="${esc(t.t)}">${esc(t.t)}</span></span>
+      <span class="tmain"><span class="tt2" title="${esc(t.t)}">${esc(t.t)}</span></span>
       <span class="tmeta">${t.due?`<span class="${t.due<S.today?'over':''}">${esc(fmtDue(t.due))}</span>`:''}${t.time?`<span>${esc(t.time)}</span>`:''}${t.rep?`<span class="rep">${ic('repeat',11,2)}${esc(t.rep)}</span>`:''}${t.subs?`<span>${esc(t.subs)}</span>`:''}${t.prio?`<span class="flag${t.prio}">${ic('flag',12,2)}</span>`:''}</span>
       <span class="acts">${t.due<S.today?`<button class="row-btn" data-tom="${t.id}" title="移到明天">${ic('arrow',13)}</button>`:''}<button class="row-btn del" data-del="${t.id}" title="删除">${ic('trash',13)}</button></span>
     </div>`};
