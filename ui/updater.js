@@ -10,7 +10,8 @@
 const Updater=(()=>{
   const CHECK_GAP=24*3600*1000; // 自动检查节流:24h 内不重复请求更新源
   const CHECK_DELAY=5000;       // 启动后延迟,避开首屏渲染与数据库初始化
-  const CHECK_TIMEOUT=15000;
+  const ENDPOINT_TIMEOUT=8000;  // 单端点超时(多端点依次回退,见 conf endpoints)
+  const CHECK_RACE=30000;       // 整次检查的兜底上限(3 端点×8s+余量)
   const inv=()=>window.__TAURI__?.core?.invoke;
   /* 必须走插件全局 API(返回带 downloadAndInstall 方法的 Update 实例);
      直接 invoke('plugin:updater|check') 只得纯数据,调不了安装 */
@@ -40,14 +41,15 @@ const Updater=(()=>{
     errMsg='';setState('checking');
     try{
       update=await Promise.race([
-        api.check({timeout:CHECK_TIMEOUT}),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('检查超时')),CHECK_TIMEOUT))]);
+        api.check({timeout:ENDPOINT_TIMEOUT}),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('检查超时')),CHECK_RACE))]);
       lastCheck=Date.now();localStorage.setItem('dodo-upcheck',lastCheck);
       if(update){setState('available');if(!manual)notify()}
       else{update=null;setState('idle');if(manual)toast('已是最新版本'+(APP_VERSION?' v'+APP_VERSION:''))}
     }catch(e){
       update=null;errMsg=String(e.message||e).slice(0,60);setState('error');
-      if(manual)toast('检查更新失败:'+errMsg); // 自动检查失败静默,不打扰
+      /* 自动检查失败静默;手动失败提示网络受限可能,弹窗内可复制下载链接 */
+      if(manual)toast('检查更新失败:'+errMsg+' · 若网络无法访问 GitHub 可稍后重试');
     }
   }
 
@@ -88,6 +90,7 @@ const Updater=(()=>{
         if(busy())return; // 下载/安装中锁定弹窗,防误关导致装到一半失去反馈
         if(e.target===ov||e.target.closest('[data-uclose],[data-ulater]'))closeDialog();
         else if(e.target.closest('[data-unow]'))downloadAndInstall();
+        else if(e.target.closest('[data-ucopy]'))copyDownloadLink();
       });
     }
     render();
@@ -106,8 +109,22 @@ const Updater=(()=>{
       ${notes?`<div class="unotes">${esc(notes)}</div>`:''}
       ${prog?`<div class="uprog"><div class="uprog-bar" style="width:0%"></div></div><div class="uprog-t">准备下载…</div>`:''}
       ${err?`<div class="uerr">${ic('alert',13)} ${esc(errMsg||'下载失败,请稍后重试')}</div>`:''}
-      ${prog?'':`<div class="ubtns"><button class="sbtn" data-ulater>稍后</button><button class="sbtn primary" data-unow>${err?'重试':'立即更新'}</button></div>`}
+      ${prog?'':`<div class="ubtns">${err?`<button class="sbtn" data-ucopy>复制下载链接</button>`:''}<button class="sbtn" data-ulater>稍后</button><button class="sbtn primary" data-unow>${err?'重试':'立即更新'}</button></div>`}
     </div>`;
+  }
+
+  /* 检查/下载失败时给手动兜底:复制 Releases 页地址,浏览器里直接下安装包 */
+  function copyDownloadLink(){
+    const url='https://github.com/1001ww/DoDo/releases/latest';
+    const done=()=>toast('下载链接已复制,可在浏览器打开手动下载');
+    const fallback=()=>{
+      const ta=document.createElement('textarea');ta.value=url;document.body.appendChild(ta);
+      ta.select();
+      try{document.execCommand('copy');done()}catch(e){toast('复制失败,请手动访问 '+url)}
+      ta.remove();
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(done).catch(fallback);
+    else fallback();
   }
 
   /* boot 与回前台都会调:开关关闭或 24h 内查过则跳过 */

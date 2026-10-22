@@ -28,7 +28,9 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzRjI1MEVGQzU2MzRBMzcKUldRM1NtUEY3MUR5RTJYR1gvVTRyUStlV1FHVERQSUh6WGdsUGZ4RVVQRDkwTlhXTGxqNG1nemYK",
       "endpoints": [
-        "https://github.com/1001ww/DoDo/releases/latest/download/latest.json"
+        "https://github.com/1001ww/DoDo/releases/latest/download/latest.json",
+        "https://ghfast.top/https://github.com/1001ww/DoDo/releases/latest/download/latest-cn1.json",
+        "https://gh-proxy.com/https://github.com/1001ww/DoDo/releases/latest/download/latest-cn2.json"
       ],
       "windows": {
         "installMode": "passive"
