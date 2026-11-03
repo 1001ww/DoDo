@@ -487,11 +487,10 @@ html.desktop .titlebar{user-select:none}
 .st-chart svg{display:block;width:100%;height:auto;cursor:crosshair}
 .st-chart .base{stroke:var(--border)}
 .st-chart .avg{stroke:var(--text-3);opacity:.4;stroke-dasharray:2 5}
-.st-chart .avglbl{font-size:10.5px;fill:var(--text-3)}
-.st-chart .aline{fill:none;stroke:var(--primary);stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
+.st-chart .aline{fill:none;stroke:var(--primary);stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .st-chart .afill{opacity:.9}
 .st-chart .st-pt{transition:r .12s}
-.st-chart .st-pt.hot{r:5.5}
+.st-chart .st-pt.hot{r:4.5}
 .st-chart .aval{font-size:11px;fill:var(--text-3)}
 .st-chart .aval.tdy{fill:var(--primary);font-weight:700}
 .st-chart .aday{font-size:11px;fill:var(--text-3)}

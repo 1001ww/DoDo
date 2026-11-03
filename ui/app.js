@@ -266,7 +266,7 @@ function bindStInteractions(){
     const focus=i=>{
       segs.forEach((s,j)=>{s.style.opacity=i<0||j===i?1:.25;s.style.strokeWidth=j===i?17:14});
       rows.forEach((r,j)=>r.classList.toggle('dim',i>=0&&j!==i));
-      if(i>=0){num.textContent=rows[i].dataset.n;lbl.textContent=rows[i].dataset.name+' · '+rows[i].dataset.pct+'%'}
+      if(i>=0){num.textContent=segs[i].dataset.n;lbl.textContent=segs[i].dataset.name+' · '+segs[i].dataset.pct+'%'}
       else{num.textContent=box.dataset.total;lbl.textContent='未完成'}
     };
     [...segs,...rows].forEach(el=>{
@@ -366,7 +366,7 @@ function buildMain(){
     /* 近 7 天面积图:平滑曲线(Catmull-Rom)+ 日均虚线;整周无完成则出空状态 */
     const r1=x=>Math.round(x*10)/10;
     const pts=days.map((d,i)=>({x:r1(10+i*(580/6)),y:r1(128-counts[i]/max*100),v:counts[i],l:d===TODAY?'今天':WD[parseISO(d).getDay()]}));
-    const avgY=r1(128-avg/max*100),avgLy=avgY-7<16?r1(avgY+16):avgY-7;
+    const avgY=r1(128-avg/max*100);
     let chart,deltaHtml='';
     if(!weekSum){
       chart=`<div class="st-chart-empty"><div class="ic-wrap">${ic('minus',16)}</div>近 7 天还没有完成记录<small>完成任务后,这里会记录你的节奏</small></div>`;
@@ -385,12 +385,12 @@ function buildMain(){
           <defs><linearGradient id="stg" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="var(--primary)" stop-opacity=".2"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/>
           </linearGradient></defs>
-          <line class="avg" x1="10" y1="${avgY}" x2="590" y2="${avgY}"/><text class="avglbl" x="590" y="${avgLy}" text-anchor="end">日均 ${avg.toFixed(1)}</text>
+          <line class="avg" x1="10" y1="${avgY}" x2="590" y2="${avgY}"/>
           <path class="afill" fill="url(#stg)" d="${line} L590,128 L10,128 Z"/>
           <path class="aline" d="${line}"/>
           <line class="sguide" id="stGuide" x1="0" y1="16" x2="0" y2="128"/>
-          ${pts[6].v?`<circle cx="${pts[6].x}" cy="${pts[6].y}" r="9" fill="var(--primary-halo)"/>`:''}
-          ${pts.map((p,i)=>`<circle class="st-pt${i===6?' tdy':''}" cx="${p.x}" cy="${p.y}" r="${i===6?4.5:3.5}" fill="var(--surface)" stroke="var(--primary)" stroke-width="${i===6?2.25:2}"/>`).join('')}
+          ${pts[6].v?`<circle cx="${pts[6].x}" cy="${pts[6].y}" r="7" fill="var(--primary-halo)"/>`:''}
+          ${pts.map((p,i)=>`<circle class="st-pt${i===6?' tdy':''}" cx="${p.x}" cy="${p.y}" r="${i===6?4:3}" fill="var(--surface)" stroke="var(--primary)" stroke-width="${i===6?2:1.75}"/>`).join('')}
           ${pts.map((p,i)=>`<text class="aval${i===6?' tdy':''}" x="${p.x}" y="${Math.max(14,p.y-14)}" text-anchor="middle">${p.v}</text>`).join('')}
           <line class="base" x1="10" y1="128" x2="590" y2="128"/>
           ${pts.map((p,i)=>`<text class="aday${i===6?' tdy':''}" x="${i===6?586:p.x}" y="152" text-anchor="middle">${p.l}</text>`).join('')}
